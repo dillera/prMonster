@@ -18,6 +18,7 @@ import { useEffect, useRef, useState } from "react";
 import type {
   ActionKind,
   ActionRecord,
+  AdminSettings,
   Decision,
   DeepBrief,
   DeepEvent,
@@ -32,6 +33,8 @@ import type {
   Proposal,
   ScanEvent,
   ScanJob,
+  SettingTestResult,
+  SettingValue,
   TriageState,
 } from "../../shared/types";
 
@@ -197,6 +200,8 @@ interface FixtureDb {
   health: HealthInfo;
   history: Record<number, Evaluation[]>;
   jobs: Record<string, ScanJob>;
+  admin: AdminSettings;
+  adminTests: Record<string, SettingTestResult>;
 }
 
 let fixtureDb: FixtureDb | null = null;
@@ -232,6 +237,8 @@ async function db(): Promise<FixtureDb> {
         deepModels: clone(mod.FIXTURE_DEEP_MODELS),
         deepSpend: clone(mod.FIXTURE_DEEP_SPEND),
         jobs: { [mod.FIXTURE_SCAN_JOB.id]: clone(mod.FIXTURE_SCAN_JOB) },
+        admin: clone(mod.FIXTURE_ADMIN_SETTINGS),
+        adminTests: clone(mod.FIXTURE_ADMIN_TESTS),
       };
       return fixtureDb;
     });
@@ -603,6 +610,85 @@ export async function setTriage(n: number, req: TriageRequest): Promise<TriageSt
     return clone(state);
   }
   return request<TriageState>(`/api/prs/${n}/triage`, { method: "POST", body: JSON.stringify(req) });
+}
+
+
+// ---------------------------------------------------------------- admin settings
+// The .env editor behind #/admin. A secret is never sent to the browser in full:
+// the server replaces it with a short mask, and a PUT that echoes that mask back is
+// ignored server side, so an untouched secret field can never overwrite the key.
+
+export async function getAdminSettings(): Promise<AdminSettings> {
+  if (FIXTURES_MODE) {
+    const store = await db();
+    await latency();
+    return clone(store.admin);
+  }
+  return request<AdminSettings>("/api/admin/settings");
+}
+
+/**
+ * Write the changed keys only. A value of null or "" unsets the key, which drops
+ * the line from .env and lets the built in default take over again.
+ */
+export async function saveAdminSettings(updates: Record<string, string | null>): Promise<AdminSettings> {
+  if (FIXTURES_MODE) return fixtureSaveAdminSettings(updates);
+  return request<AdminSettings>("/api/admin/settings", {
+    method: "PUT",
+    body: JSON.stringify({ updates }),
+  });
+}
+
+export async function testAdminSetting(key: string): Promise<SettingTestResult> {
+  if (FIXTURES_MODE) {
+    const store = await db();
+    await latency(260, 620);
+    const canned = store.adminTests[key];
+    if (canned) return { ...clone(canned), checkedAt: new Date().toISOString() };
+    // Same answer the server gives for a key it cannot check: ok, with a detail
+    // the page renders as a neutral "no test" rather than as a pass.
+    return { key, ok: true, detail: "no test for this setting", checkedAt: new Date().toISOString() };
+  }
+  return request<SettingTestResult>("/api/admin/settings/test", {
+    method: "POST",
+    body: JSON.stringify({ key }),
+  });
+}
+
+/** Mirror of the server's write rules, good enough to develop the page against. */
+async function fixtureSaveAdminSettings(updates: Record<string, string | null>): Promise<AdminSettings> {
+  const store = await db();
+  await latency(280, 520);
+  const restart = new Set(store.admin.restartRequired);
+  for (const [key, raw] of Object.entries(updates)) {
+    const def = store.admin.defs.find((d) => d.key === key);
+    if (!def) continue;
+    const current = store.admin.values.find((v) => v.key === key);
+    // A secret echoed back as its own mask is a field the reviewer never touched.
+    if (def.secret && current?.value && raw === current.value) continue;
+    const value = raw === null || raw === "" ? null : raw;
+    const shown = value !== null && def.secret ? maskSecret(value) : value;
+    const next: SettingValue = {
+      key,
+      set: value !== null,
+      source: value !== null ? "dotenv" : "default",
+      value: shown,
+      effective: value !== null ? shown : def.default,
+    };
+    const at = store.admin.values.findIndex((v) => v.key === key);
+    if (at >= 0) store.admin.values[at] = next;
+    else store.admin.values.push(next);
+    if (def.requiresRestart) restart.add(key);
+  }
+  store.admin.restartRequired = [...restart];
+  return clone(store.admin);
+}
+
+/** Same shape the server uses: a short prefix, an ellipsis, the last four. */
+function maskSecret(value: string): string {
+  if (value.length <= 8) return "\u2026";
+  const head = value.startsWith("sk-or-") ? "sk-or-" : value.slice(0, 4);
+  return `${head}\u2026${value.slice(-3)}`;
 }
 
 // ---------------------------------------------------------------- fixture behaviours

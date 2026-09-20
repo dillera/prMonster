@@ -12,6 +12,7 @@
 
 import type {
   ActionRecord,
+  AdminSettings,
   DeepBrief,
   DeepModel,
   DeepRun,
@@ -21,6 +22,7 @@ import type {
   PrListItem,
   Proposal,
   ScanJob,
+  SettingTestResult,
 } from "../shared/types";
 
 export interface HealthInfo {
@@ -8432,4 +8434,257 @@ export const FIXTURE_DEEP_SPEND: { todayUsd: number; capUsd: number; runsToday: 
   "todayUsd": 0.0926,
   "capUsd": 5,
   "runsToday": 3
+};
+
+// ---------------------------------------------------------------- admin settings
+// Sample environment for #/admin: every group, a secret that is set (shown only as
+// its mask), a secret that is not set, a key whose value comes from the process
+// environment rather than .env, and a key that needs a restart to take effect.
+
+export const FIXTURE_ADMIN_SETTINGS: AdminSettings = {
+  "defs": [
+    {
+      "key": "GITHUB_TOKEN",
+      "label": "GitHub token",
+      "description": "Personal access token used to read pull requests and, when writes are enabled, to post comments and reviews.",
+      "group": "github",
+      "secret": true,
+      "type": "string",
+      "default": null,
+      "requiresRestart": false
+    },
+    {
+      "key": "GITHUB_REPO",
+      "label": "Repository",
+      "description": "The owner/name pair the harness scans.",
+      "group": "github",
+      "secret": false,
+      "type": "string",
+      "default": "FujiNetWIFI/fujinet-firmware",
+      "requiresRestart": false
+    },
+    {
+      "key": "ALLOW_GITHUB_WRITES",
+      "label": "Allow GitHub writes",
+      "description": "Off by default. With this on, a confirmed action really posts to GitHub.",
+      "group": "github",
+      "secret": false,
+      "type": "boolean",
+      "default": "0",
+      "requiresRestart": false
+    },
+    {
+      "key": "TYPESAFE_API_KEY",
+      "label": "Jev API key",
+      "description": "Without a key the harness answers with deterministic mock evaluations.",
+      "group": "jev",
+      "secret": true,
+      "type": "string",
+      "default": null,
+      "requiresRestart": false
+    },
+    {
+      "key": "JEV_MODEL",
+      "label": "Jev model",
+      "description": "Model used for every per question evaluation.",
+      "group": "jev",
+      "secret": false,
+      "type": "enum",
+      "options": ["jev-latest", "jev-1.13.0", "jev-1.12.4"],
+      "default": "jev-latest",
+      "requiresRestart": false
+    },
+    {
+      "key": "JEV_CONCURRENCY",
+      "label": "Jev concurrency",
+      "description": "How many chunks are evaluated at once during a scan.",
+      "group": "jev",
+      "secret": false,
+      "type": "number",
+      "default": "2",
+      "requiresRestart": false
+    },
+    {
+      "key": "OPENROUTER_API_KEY",
+      "label": "OpenRouter key",
+      "description": "Used for deep analysis runs. Without it, deep runs are mock and labelled as such.",
+      "group": "openrouter",
+      "secret": true,
+      "type": "string",
+      "default": null,
+      "requiresRestart": false
+    },
+    {
+      "key": "OPENROUTER_BASE_URL",
+      "label": "OpenRouter base URL",
+      "description": "Override only when routing through a proxy.",
+      "group": "openrouter",
+      "secret": false,
+      "type": "string",
+      "default": "https://openrouter.ai/api/v1",
+      "requiresRestart": false
+    },
+    {
+      "key": "DEEP_MODEL",
+      "label": "Deep analysis model",
+      "description": "Model preselected for a new deep run.",
+      "group": "deep",
+      "secret": false,
+      "type": "enum",
+      "options": [
+        "anthropic/claude-haiku-4.5",
+        "anthropic/claude-sonnet-4.5",
+        "openai/gpt-5-mini",
+        "google/gemini-2.5-flash"
+      ],
+      "default": "anthropic/claude-haiku-4.5",
+      "requiresRestart": false
+    },
+    {
+      "key": "DEEP_DAILY_CAP_USD",
+      "label": "Daily spend cap",
+      "description": "Deep runs stop for the day once this much has been spent.",
+      "group": "deep",
+      "secret": false,
+      "type": "number",
+      "default": "5",
+      "requiresRestart": false
+    },
+    {
+      "key": "DEEP_MAX_STEPS",
+      "label": "Maximum steps per run",
+      "description": "Upper bound on tool calls in one deep run.",
+      "group": "deep",
+      "secret": false,
+      "type": "number",
+      "default": "24",
+      "requiresRestart": false
+    },
+    {
+      "key": "PORT",
+      "label": "Server port",
+      "description": "Port the harness listens on. The dashboard proxy expects 8787.",
+      "group": "server",
+      "secret": false,
+      "type": "number",
+      "default": "8787",
+      "requiresRestart": true
+    },
+    {
+      "key": "DATA_DIR",
+      "label": "Data directory",
+      "description": "Where evaluations, actions and deep runs are stored on disk.",
+      "group": "server",
+      "secret": false,
+      "type": "string",
+      "default": "./data",
+      "requiresRestart": true
+    },
+    {
+      "key": "LOG_LEVEL",
+      "label": "Log level",
+      "description": "Verbosity of the server log.",
+      "group": "server",
+      "secret": false,
+      "type": "enum",
+      "options": ["error", "warn", "info", "debug"],
+      "default": "info",
+      "requiresRestart": false
+    }
+  ],
+  "values": [
+    { "key": "GITHUB_TOKEN", "set": true, "source": "dotenv", "value": "ghp_…f29a", "effective": "ghp_…f29a" },
+    {
+      "key": "GITHUB_REPO",
+      "set": true,
+      "source": "dotenv",
+      "value": "FujiNetWIFI/fujinet-firmware",
+      "effective": "FujiNetWIFI/fujinet-firmware"
+    },
+    { "key": "ALLOW_GITHUB_WRITES", "set": false, "source": "default", "value": null, "effective": "0" },
+    { "key": "TYPESAFE_API_KEY", "set": false, "source": "default", "value": null, "effective": null },
+    { "key": "JEV_MODEL", "set": true, "source": "dotenv", "value": "jev-1.13.0", "effective": "jev-1.13.0" },
+    { "key": "JEV_CONCURRENCY", "set": false, "source": "default", "value": null, "effective": "2" },
+    { "key": "OPENROUTER_API_KEY", "set": true, "source": "dotenv", "value": "sk-or-…583", "effective": "sk-or-…583" },
+    {
+      "key": "OPENROUTER_BASE_URL",
+      "set": false,
+      "source": "default",
+      "value": null,
+      "effective": "https://openrouter.ai/api/v1"
+    },
+    {
+      "key": "DEEP_MODEL",
+      "set": true,
+      "source": "dotenv",
+      "value": "anthropic/claude-haiku-4.5",
+      "effective": "anthropic/claude-haiku-4.5"
+    },
+    { "key": "DEEP_DAILY_CAP_USD", "set": true, "source": "dotenv", "value": "5", "effective": "5" },
+    { "key": "DEEP_MAX_STEPS", "set": false, "source": "default", "value": null, "effective": "24" },
+    { "key": "PORT", "set": true, "source": "env", "value": "8787", "effective": "8787" },
+    { "key": "DATA_DIR", "set": false, "source": "default", "value": null, "effective": "./data" },
+    { "key": "LOG_LEVEL", "set": true, "source": "dotenv", "value": "info", "effective": "info" }
+  ],
+  "dotenvPath": "/Users/reviewer/code/prMonster/.env",
+  "dotenvWritable": true,
+  "restartRequired": ["PORT"]
+};
+
+/** Canned answers for POST /api/admin/settings/test, one of them failing. */
+export const FIXTURE_ADMIN_TESTS: Record<string, SettingTestResult> = {
+  "GITHUB_TOKEN": {
+    "key": "GITHUB_TOKEN",
+    "ok": true,
+    "detail": "Authenticated as fujinet-bot, 4998 of 5000 requests left this hour.",
+    "checkedAt": "2025-05-12T09:14:02.000Z"
+  },
+  "GITHUB_REPO": {
+    "key": "GITHUB_REPO",
+    "ok": true,
+    "detail": "FujiNetWIFI/fujinet-firmware is readable, 37 open pull requests.",
+    "checkedAt": "2025-05-12T09:14:03.000Z"
+  },
+  "ALLOW_GITHUB_WRITES": {
+    "key": "ALLOW_GITHUB_WRITES",
+    "ok": true,
+    "detail": "Writes are disabled, so no action can reach GitHub.",
+    "checkedAt": "2025-05-12T09:14:03.000Z"
+  },
+  "TYPESAFE_API_KEY": {
+    "key": "TYPESAFE_API_KEY",
+    "ok": false,
+    "detail": "No key set, so evaluations are deterministic mocks.",
+    "checkedAt": "2025-05-12T09:14:04.000Z"
+  },
+  "JEV_MODEL": {
+    "key": "JEV_MODEL",
+    "ok": true,
+    "detail": "jev-1.13.0 is available.",
+    "checkedAt": "2025-05-12T09:14:05.000Z"
+  },
+  "JEV_CONCURRENCY": {
+    "key": "JEV_CONCURRENCY",
+    "ok": true,
+    "detail": "2 is within the allowed range of 1 to 8.",
+    "checkedAt": "2025-05-12T09:14:05.000Z"
+  },
+  "OPENROUTER_API_KEY": {
+    "key": "OPENROUTER_API_KEY",
+    "ok": true,
+    "detail": "Key accepted, 312 models listed, 4.91 USD of credit left.",
+    "checkedAt": "2025-05-12T09:14:06.000Z"
+  },
+  "OPENROUTER_BASE_URL": {
+    "key": "OPENROUTER_BASE_URL",
+    "ok": true,
+    "detail": "https://openrouter.ai/api/v1 answered in 214 ms.",
+    "checkedAt": "2025-05-12T09:14:07.000Z"
+  },
+  "DEEP_MODEL": {
+    "key": "DEEP_MODEL",
+    "ok": true,
+    "detail": "anthropic/claude-haiku-4.5 is listed by OpenRouter.",
+    "checkedAt": "2025-05-12T09:14:08.000Z"
+  }
 };

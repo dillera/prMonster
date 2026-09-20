@@ -1,6 +1,6 @@
 // FujiNet PR triage dashboard (DESIGN.md 7).
 //
-// Routing is location.hash only: #/ , #/pr/1650 , #/audit , #/policy.
+// Routing is location.hash only: #/ , #/pr/1650 , #/audit , #/policy , #/admin.
 // All decision maths lives on the server; this app displays stored evaluations and
 // asks /api/decide whenever a trial policy needs re-deciding.
 
@@ -35,6 +35,7 @@ import {
   useScanEvents,
 } from "./lib/api";
 import { DEFAULT_REPO } from "./github";
+import { AdminPage } from "./components/AdminPage";
 import { AuditLog } from "./components/AuditLog";
 import { DetailPanel } from "./components/DetailPanel";
 import { Header, MockBanner } from "./components/Header";
@@ -46,7 +47,7 @@ import { StatsRow } from "./components/StatsRow";
 import { ErrorNote } from "./components/ui";
 
 // ---------------------------------------------------------------- routing
-type View = "list" | "pr" | "audit" | "policy";
+type View = "list" | "pr" | "audit" | "policy" | "admin";
 interface Route {
   view: View;
   n: number | null;
@@ -60,6 +61,7 @@ function parseHash(hash: string): Route {
   }
   if (clean === "audit") return { view: "audit", n: null };
   if (clean === "policy") return { view: "policy", n: null };
+  if (clean === "admin") return { view: "admin", n: null };
   return { view: "list", n: null };
 }
 
@@ -470,10 +472,12 @@ export function App() {
       <main
         id="main"
         className={`layout${route.view === "pr" ? " layout--detail" : ""}${
-          route.view === "audit" ? " layout--audit" : ""
+          route.view === "audit" || route.view === "admin" ? " layout--audit" : ""
         }`}
       >
-        {route.view === "audit" ? (
+        {route.view === "admin" ? (
+          <AdminPage />
+        ) : route.view === "audit" ? (
           <AuditLog records={actions} loading={actionsLoading} error={actionsError} onRefresh={refreshActions} />
         ) : (
           <>

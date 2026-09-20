@@ -233,6 +233,42 @@ before saving. Set a weight to 0 to keep a question visible but out of the
 score. Lower `maxChunksPerPr` to cap spend on huge PRs; coverage then reads
 `partial` and the *Files* tab lists what went unread.
 
+## Settings from the UI
+
+Every environment variable the server reads has an entry in
+`src/server/settings.ts`, and the *Settings* screen edits them all through
+three localhost-only routes:
+
+| Route | What it does |
+|---|---|
+| `GET /api/admin/settings` | The catalog, each value's state and where it came from (`dotenv`, `env` or `default`). |
+| `PUT /api/admin/settings` | `{ updates: { KEY: "value" \| null } }` — validates, rewrites `.env`, applies live. |
+| `POST /api/admin/settings/test` | `{ key }` — reaches the service that key configures and reports what came back. |
+
+Four rules the server keeps to:
+
+- **Secrets never leave the process.** A key is reported as its first five
+  characters, an ellipsis and its last three (`apike…a42`), or just `(set)` if
+  it is shorter than twelve. A PUT that submits exactly that mask back is a
+  form round trip, not an edit, and is ignored.
+- **Your `.env` is edited, not regenerated.** Every comment, blank line and
+  ordering survives: a matching `KEY=` line is rewritten where it stands, a
+  commented-out `#KEY=` line is revived in place, anything new is appended, and
+  unsetting a key comments it out rather than deleting its documentation. The
+  write is tmp-file + rename, and the file is seeded from `.env.example` if it
+  does not exist yet.
+- **Changes apply to the next request.** `process.env` is updated and the few
+  memoised caches (the GitHub token, the cloned repo, the OpenRouter model
+  list) are cleared. `PORT`, `DEEP_STORE_PATH`, `DOSSIER_CACHE_DIR` and
+  `DOTENV_PATH` are read once at startup, so they are written to `.env` and
+  listed in `restartRequired` instead.
+- **Only this machine may ask.** Any request whose `Host` is not `localhost`,
+  `127.0.0.1` or `[::1]` gets a 403. Each change is logged to stderr and to
+  `data/admin-log.json` **by key only** — never a value.
+
+`DOTENV_PATH` points the whole mechanism at another file, which is how the
+tests exercise it without touching the real `.env`.
+
 ## Cost
 
 Jev bills $0.042 per million input tokens; output is free. Measured on the

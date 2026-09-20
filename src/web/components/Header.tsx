@@ -58,6 +58,9 @@ export function Header({
         <a className={`navlink${route === "policy" ? " navlink--on" : ""}`} href="#/policy">
           Policy
         </a>
+        <a className={`navlink${route === "admin" ? " navlink--on" : ""}`} href="#/admin">
+          Admin
+        </a>
       </nav>
 
       <div className="header__pills">

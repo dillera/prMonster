@@ -43,7 +43,9 @@ import {
   startScan,
 } from "./pipeline.js";
 import { briefProposal, buildProposal, proposalId, signBody } from "./proposals.js";
+import { applySettings, readSettings, SettingsError, settingDef, testSetting } from "./settings.js";
 import {
+  ADMIN_LOG_PATH,
   appendAction,
   ensureDataDir,
   knownPrNumbers,
@@ -57,6 +59,8 @@ import {
   PROJECT_ROOT,
   readActions,
   readEvaluations,
+  readJson,
+  writeJsonAtomic,
   savePolicy,
   setTriage,
   triageFor,
@@ -698,6 +702,94 @@ app.get("/api/deep/models", async (c) => {
 app.get("/api/deep/spend", (c) => {
   const { todayUsd, runsToday } = spendToday();
   return c.json({ todayUsd, capUsd: dailyCapUsd(), runsToday });
+});
+
+// --- admin settings ---------------------------------------------------------
+//
+// These routes hand out and rewrite the whole environment, so they answer only
+// to a browser on this machine: any Host header that is not localhost gets a
+// 403 before the handler runs. Secrets are masked on the way out and changes
+// are logged by key, never by value.
+
+/** localhost, 127.0.0.1 or [::1], on any port. */
+export function isLocalHost(host: string | undefined): boolean {
+  if (host === undefined || host === "") return false;
+  const bare = host.startsWith("[")
+    ? host.slice(1, host.indexOf("]") === -1 ? undefined : host.indexOf("]"))
+    : (host.split(":")[0] ?? "");
+  const name = bare.trim().toLowerCase();
+  return name === "localhost" || name === "127.0.0.1" || name === "::1";
+}
+
+app.use("/api/admin/*", async (c, next) => {
+  if (!isLocalHost(c.req.header("host"))) {
+    return c.json({ error: "the admin API answers only to localhost" }, 403);
+  }
+  await next();
+});
+
+function logSettingsChange(keys: string[]): void {
+  if (keys.length === 0) return;
+  // Keys only. A value written here would be a secret written to disk in clear.
+  console.error(`[admin] settings changed: ${keys.join(", ")}`);
+  try {
+    ensureDataDir();
+    const log = readJson<Array<{ at: string; keys: string[] }>>(ADMIN_LOG_PATH, []);
+    log.push({ at: new Date().toISOString(), keys });
+    writeJsonAtomic(ADMIN_LOG_PATH, log);
+  } catch (err) {
+    console.error(`[admin] could not append to the admin log: ${(err as Error).message}`);
+  }
+}
+
+app.get("/api/admin/settings", (c) => c.json(readSettings()));
+
+app.put("/api/admin/settings", async (c) => {
+  let raw: { updates?: unknown };
+  try {
+    raw = (await c.req.json()) as typeof raw;
+  } catch {
+    return c.json({ error: "body must be JSON" }, 400);
+  }
+  const updates = raw.updates;
+  if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
+    return c.json({ error: "updates must be an object of key -> string or null" }, 400);
+  }
+  const clean: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(updates as Record<string, unknown>)) {
+    if (value !== null && typeof value !== "string") {
+      return c.json({ error: `${key} must be a string or null`, key }, 400);
+    }
+    clean[key] = value;
+  }
+
+  try {
+    const { changed, deferred } = applySettings(clean);
+    logSettingsChange(changed);
+    if (deferred.length > 0) {
+      console.error(`[admin] a restart is needed for: ${deferred.join(", ")}`);
+    }
+    return c.json(readSettings());
+  } catch (err) {
+    if (err instanceof SettingsError) return c.json({ error: err.message, key: err.key }, 400);
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
+app.post("/api/admin/settings/test", async (c) => {
+  let raw: { key?: unknown };
+  try {
+    raw = (await c.req.json()) as typeof raw;
+  } catch {
+    return c.json({ error: "body must be JSON" }, 400);
+  }
+  if (typeof raw.key !== "string" || raw.key === "") return c.json({ error: "key is required" }, 400);
+  if (!settingDef(raw.key)) return c.json({ error: `unknown setting: ${raw.key}`, key: raw.key }, 400);
+  try {
+    return c.json(await testSetting(raw.key));
+  } catch (err) {
+    return c.json({ error: (err as Error).message, key: raw.key }, 500);
+  }
 });
 
 app.all("/api/*", (c) => c.json({ error: `no such endpoint: ${c.req.path}` }, 404));

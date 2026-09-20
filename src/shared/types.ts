@@ -104,3 +104,9 @@ export type DeepEvent =
   | { type: "deep:step"; n: number; runId: string; step: DeepStep }
   | { type: "deep:done"; n: number; runId: string; run: DeepRun }
   | { type: "deep:error"; n: number; runId: string; error: string };
+
+// ---- Admin settings (every environment variable, managed from the UI) ----
+export interface SettingDef { key: string; label: string; description: string; group: "github" | "jev" | "openrouter" | "deep" | "server"; secret: boolean; type: "string" | "number" | "boolean" | "enum"; options?: string[]; default: string | null; requiresRestart: boolean; }
+export interface SettingValue { key: string; set: boolean; source: "env" | "dotenv" | "default"; value: string | null; effective: string | null; }
+export interface AdminSettings { defs: SettingDef[]; values: SettingValue[]; dotenvPath: string; dotenvWritable: boolean; restartRequired: string[]; }
+export interface SettingTestResult { key: string; ok: boolean; detail: string; checkedAt: string; }

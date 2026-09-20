@@ -4347,6 +4347,278 @@ pre,
   max-width: 62ch;
 }
 
+
+/* ---------------------------------------------------------------- admin */
+.admin {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-width: 0;
+}
+
+.admin__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin__title {
+  margin: 0;
+  font-size: 17px;
+}
+
+.admin__lede {
+  margin: 4px 0 0;
+  max-width: 72ch;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.admin__headactions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.admin__env {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.admin__envpath {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.admin__warn {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--review-dim);
+  background: var(--review-bg);
+  border-radius: var(--radius-sm);
+  color: var(--review);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.admin__summary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.admin__saved {
+  padding: 10px 12px;
+  border: 1px solid var(--accent-dim);
+  background: var(--accent-bg);
+  border-radius: var(--radius-sm);
+}
+
+.admin__savedtitle {
+  display: block;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.admin__savedtext {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.admin__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin__grouptitle {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.admin__grouplede {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+  max-width: 72ch;
+}
+
+.admin__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.setting {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.setting--changed {
+  border-color: var(--accent-dim);
+}
+
+.setting__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.setting__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.setting__pills {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.setting__key {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.setting__desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.setting__control {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.setting__inputrow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.setting__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+select.setting__input {
+  flex: 1 1 200px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.setting__actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.setting__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.setting__result {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.setting__resultdetail {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.setting__resulttime {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.adminfoot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 4px -16px -16px;
+  padding: 10px 16px;
+  background: var(--surface-3);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.adminfoot__state {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.adminfoot__error {
+  flex: 1 1 180px;
+  font-size: 12px;
+  color: var(--blocked);
+  overflow-wrap: anywhere;
+}
+
+.adminfoot__actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+@media (max-width: 560px) {
+  .admin {
+    padding: 12px;
+  }
+
+  .adminfoot {
+    margin: 4px -12px -12px;
+    padding: 10px 12px;
+  }
+}
+
 /* ---------------------------------------------------------------- narrow */
 @media (max-width: 860px) {
   .header {

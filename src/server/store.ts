@@ -34,6 +34,7 @@ export const CACHE_DIR = resolve(DATA_DIR, "cache");
 export const EVALUATIONS_PATH = resolve(DATA_DIR, "evaluations.json");
 export const TRIAGE_PATH = resolve(DATA_DIR, "triage.json");
 export const ACTIONS_PATH = resolve(DATA_DIR, "actions.json");
+export const ADMIN_LOG_PATH = resolve(DATA_DIR, "admin-log.json");
 export const POLICY_PATH = resolve(PROJECT_ROOT, "config/policy.json");
 
 function ensureDir(dir: string): void {
