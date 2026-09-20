@@ -62,3 +62,41 @@ export type ScanEvent =
   | { type: "pr:done"; n: number; evaluation: Evaluation }
   | { type: "pr:error"; n: number; error: string }
   | { type: "scan:done"; jobId: string };
+
+// ---- Deep analysis (see DESIGN-deep.md) ----
+export interface Revision { headSha: string; pushedAt: string; commits: Array<{ sha: string; date: string; author: string; subject: string }>; additions: number; deletions: number; changedFiles: number; }
+export interface RevisionDelta { fromSha: string; toSha: string; diff: string; filesTouched: string[]; linesAddedNowRemoved: number; linesRemovedNowRestored: number; summary: string; }
+export interface DeletedLineOrigin { path: string; line: number; text: string; sha: string; author: string; date: string; subject: string; pr: { number: number; title: string; url: string; author: string; mergedAt: string | null; body: string } | null; }
+export interface ThreadEntry { kind: "issue_comment" | "review_comment" | "review" | "commit"; at: string; author: string; association: string; isMaintainer: boolean; body: string; path?: string; line?: number; state?: string; url: string; }
+export interface CrossRef { symbol: string; fromDeletedLine: string; hits: Array<{ path: string; line: number; text: string }>; }
+export interface DriftSignal { kind: "body_mentions_absent_token" | "title_mentions_absent_token" | "body_predates_push" | "commit_subject_disagrees_with_title"; detail: string; evidence: string[]; }
+export interface Dossier {
+  prNumber: number; headSha: string; baseSha: string; builtAt: string;
+  revisions: Revision[]; latestDelta: RevisionDelta | null;
+  deletedLineOrigins: DeletedLineOrigin[]; originPrs: Array<{ number: number; title: string; author: string; mergedAt: string | null; daysAgo: number; linesDeletedFromIt: number; authorInThread: boolean }>;
+  thread: ThreadEntry[]; maintainers: string[];
+  crossRefs: CrossRef[]; drift: DriftSignal[];
+  availability: { git: boolean; provenance: boolean; crossRefs: boolean; notes: string[] };
+}
+export type DeepAction = "merge_review_now" | "request_design_discussion" | "request_description_or_tests" | "request_split" | "request_rebase" | "request_follow_up_issue" | "ask_original_author" | "wait_for_ci" | "close_stale";
+export interface Citation { kind: "code" | "pr" | "comment" | "commit"; ref: string; note?: string; }
+export interface ClaimVerdict { claim: string; by: string; verdict: "holds" | "does_not_hold" | "partially_holds" | "unverified"; evidence: string; citations: Citation[]; }
+export interface RemovedBehaviour { lines: string; originPr: number | null; purpose: string; status: "replaced" | "made_opt_in" | "removed_without_replacement" | "unclear"; citations: Citation[]; }
+export interface DeepBrief {
+  summary: string; revisionChanges: string[]; removedBehaviour: RemovedBehaviour[]; claims: ClaimVerdict[];
+  openQuestions: Array<{ question: string; toWhom: string }>; recommendedAction: DeepAction; rationale: string[];
+  draftReply: string; confidence: "low" | "medium" | "high"; caveats: string[];
+}
+export interface DeepStep { index: number; at: string; kind: "tool" | "assistant" | "system"; name?: string; args?: unknown; resultPreview?: string; }
+export interface DeepRun {
+  id: string; prNumber: number; headSha: string; evaluationId: string | null; dossierBuiltAt: string;
+  model: string; mock: boolean; startedAt: string; finishedAt?: string; status: "running" | "done" | "failed" | "aborted";
+  steps: DeepStep[]; brief: DeepBrief | null; usage: { promptTokens: number; completionTokens: number; costUsd: number; calls: number };
+  error?: string; requestedBy: string;
+}
+export interface DeepModel { id: string; name: string; contextLength: number; promptUsdPerM: number; completionUsdPerM: number; }
+export type DeepEvent =
+  | { type: "deep:start"; n: number; runId: string; model: string }
+  | { type: "deep:step"; n: number; runId: string; step: DeepStep }
+  | { type: "deep:done"; n: number; runId: string; run: DeepRun }
+  | { type: "deep:error"; n: number; runId: string; error: string };
