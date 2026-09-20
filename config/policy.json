@@ -1,0 +1,37 @@
+{
+  "readyThreshold": 75,
+  "reviewThreshold": 45,
+  "confidenceFloor": 0.5,
+  "maxUncertainNouls": 2,
+  "softGatePenalty": 6,
+  "skipJevWhenBlocked": false,
+  "weights": {
+    "single_concern": 2,
+    "explains_why": 1.5,
+    "states_testing": 1.5,
+    "needs_design_discussion": 1.5,
+    "risk": 2,
+    "description_quality": 1,
+    "duplicates_platform_code": 2,
+    "bypasses_abstractions": 1.5,
+    "adds_global_state": 1.5,
+    "narrating_comments": 0.75,
+    "commented_out_code": 0.75,
+    "bulk_reformat": 1,
+    "bare_bool_status": 1,
+    "layer_violation": 1.5,
+    "hot_path_logging": 1,
+    "unchecked_allocation": 1.5,
+    "code_quality": 2
+  },
+  "hardBlocks": {
+    "reviewer_directed_text": 0.7
+  },
+  "gates": {},
+  "jev": {
+    "model": "jev-latest",
+    "maxStateTokens": 14000,
+    "maxChunksPerPr": 12,
+    "concurrency": 2
+  }
+}

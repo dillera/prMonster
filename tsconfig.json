@@ -1,0 +1,33 @@
+{
+  // Server + shared code. NodeNext module resolution.
+  //
+  // IMPORTANT: because moduleResolution is NodeNext, every relative import in
+  // src/server and src/shared must carry an explicit ".js" extension, even when
+  // the source file is ".ts". Server code importing the shared contract writes:
+  //
+  //     import type { Evaluation } from "../shared/types.js";
+  //
+  // The web build (tsconfig.web.json) uses bundler resolution instead and omits
+  // extensions, so src/shared/types.ts must stay importable from both worlds:
+  // keep it types-only / dependency-free.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "dist/server",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "declaration": false,
+    "sourceMap": true,
+    "types": ["node"]
+  },
+  "include": ["src/server/**/*.ts", "src/shared/**/*.ts"],
+  "exclude": ["src/web", "tests", "dist", "node_modules"]
+}

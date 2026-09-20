@@ -1,0 +1,26 @@
+{
+  // Web (Vite + React). Vite resolves ".ts"/".tsx" imports without an extension,
+  // so web code imports the shared contract as `../shared/types` (no ".js").
+  // Type-check only; Vite does the emitting.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "types": ["vite/client"]
+  },
+  "include": ["src/web/**/*.ts", "src/web/**/*.tsx", "src/shared/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
+}
