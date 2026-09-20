@@ -198,6 +198,13 @@ export function QuestionsTab({ evaluation }: { evaluation: Evaluation }) {
             if (!answer) return <MissingRow key={question.id} question={question} />;
             return <QuestionRow key={question.id} question={question} answer={answer} />;
           })}
+          {/* Anything the server answered that this catalog does not know about is
+              still shown, so a new question is never silently invisible. */}
+          {Object.entries(evaluation.prAnswers)
+            .filter(([id]) => !QUESTION_BY_ID[id])
+            .map(([id, answer]) => (
+              <QuestionRow key={id} question={unknownQuestion(id, answer)} answer={answer} />
+            ))}
         </ul>
       </section>
 
@@ -235,6 +242,21 @@ export function QuestionsTab({ evaluation }: { evaluation: Evaluation }) {
       </section>
     </div>
   );
+}
+
+/** A question the server answered but this catalog does not describe. */
+function unknownQuestion(id: string, answer: JevAnswer): UiQuestion {
+  return {
+    id,
+    kind: "pr",
+    type: answer.type,
+    label: id.replace(/_/g, " "),
+    instructions: null,
+    weight: 0,
+    polarity: "info",
+    meaning: "This question is not in the dashboard catalog, so it is shown exactly as the server sent it.",
+    ...(answer.type === "score" ? { levels: Object.keys(answer.legend).length, legend: answer.legend } : {}),
+  };
 }
 
 function MissingRow({ question }: { question: UiQuestion }) {

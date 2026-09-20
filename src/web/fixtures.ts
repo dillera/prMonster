@@ -12,6 +12,10 @@
 
 import type {
   ActionRecord,
+  DeepBrief,
+  DeepModel,
+  DeepRun,
+  Dossier,
   Evaluation,
   Policy,
   PrListItem,
@@ -68,7 +72,8 @@ export const FIXTURE_POLICY: Policy = {
     "layer_violation": 1.5,
     "hot_path_logging": 1,
     "unchecked_allocation": 1.5,
-    "code_quality": 2
+    "code_quality": 2,
+    "body_matches_diff": 1.5
   },
   "hardBlocks": {
     "reviewer_directed_text": 0.7
@@ -98,8 +103,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "fedora-sdl2",
       "headSha": "0a1b3c5d7e9f0a1b3c5d7e9f0a1b3c5d7e9f0a1b",
-      "createdAt": "2026-09-20T18:12:00.000Z",
-      "updatedAt": "2026-09-20T18:12:00.000Z",
+      "createdAt": "2026-09-20T17:44:15.973Z",
+      "updatedAt": "2026-09-20T17:44:15.973Z",
       "labels": [
         "fujinet-pc",
         "build"
@@ -166,636 +171,12 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "commentCount": 0,
       "latestReviewStates": {},
       "diffBytes": 940,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": null,
     "stale": false,
     "triage": null,
     "fetchError": "GitHub returned 502 for the file list after 3 attempts."
-  },
-  {
-    "snapshot": {
-      "number": 1650,
-      "title": "[rs232] limit UART RTS/CTS hardware flow control to COCO_HS_UART",
-      "body": "The RS232 build enables hardware flow control on every UART, which wedges the FujiNet when a host leaves CTS low. Only the COCO high speed UART path actually needs RTS/CTS, so gate the call on COCO_HS_UART and leave the other UARTs in software flow control.\n\nWhy: reported on Discord by two RS232 users whose FujiNet stopped responding after the host closed the port.\n\nTested: built and flashed the RS232 target on an ESP32-WROVER, ran a 2 MB XMODEM transfer at 115200 both directions, and confirmed the COCO high speed path still negotiates at 230400.",
-      "author": "mozzwald",
-      "authorAssociation": "MEMBER",
-      "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650",
-      "draft": false,
-      "state": "open",
-      "base": "master",
-      "headRef": "rs232-flowctl-coco",
-      "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
-      "createdAt": "2026-09-18T18:12:00.000Z",
-      "updatedAt": "2026-09-20T18:12:00.000Z",
-      "labels": [
-        "rs232",
-        "bugfix"
-      ],
-      "mergeable": true,
-      "mergeableState": "clean",
-      "additions": 13,
-      "deletions": 5,
-      "changedFiles": 2,
-      "files": [
-        {
-          "path": "lib/hardware/ESP32UARTChannel.cpp",
-          "status": "modified",
-          "additions": 11,
-          "deletions": 4
-        },
-        {
-          "path": "lib/hardware/ESP32UARTChannel.h",
-          "status": "modified",
-          "additions": 2,
-          "deletions": 1
-        }
-      ],
-      "checks": [
-        {
-          "name": "macOS 14 ARM: Target ATARI",
-          "status": "completed",
-          "conclusion": "success",
-          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171200"
-        },
-        {
-          "name": "Ubuntu: Target ATARI",
-          "status": "completed",
-          "conclusion": "success",
-          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171201"
-        },
-        {
-          "name": "Ubuntu: Target RS232",
-          "status": "completed",
-          "conclusion": "success",
-          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171202"
-        },
-        {
-          "name": "Ubuntu: Target COCO",
-          "status": "completed",
-          "conclusion": "success",
-          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171203"
-        },
-        {
-          "name": "Windows: Target APPLE",
-          "status": "completed",
-          "conclusion": "success",
-          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171204"
-        },
-        {
-          "name": "FujiNet-PC: ctest",
-          "status": "completed",
-          "conclusion": "success",
-          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171205"
-        }
-      ],
-      "ci": "green",
-      "reviewCount": 1,
-      "commentCount": 2,
-      "latestReviewStates": {
-        "apc": "APPROVED"
-      },
-      "diffBytes": 1842,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
-    },
-    "evaluation": {
-      "id": "ev_1650_9f3c1d2a",
-      "prNumber": 1650,
-      "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
-      "evaluatedAt": "2026-09-20T17:56:00.000Z",
-      "mock": true,
-      "model": "jev-1.13.0",
-      "gates": [
-        {
-          "id": "not_draft",
-          "severity": "hard",
-          "passed": true,
-          "detail": "Pull request is not a draft"
-        },
-        {
-          "id": "mergeable",
-          "severity": "hard",
-          "passed": true,
-          "detail": "GitHub reports the branch merges cleanly"
-        },
-        {
-          "id": "ci_green",
-          "severity": "hard",
-          "passed": true,
-          "detail": "No check run reports failure, timed out, or cancelled"
-        },
-        {
-          "id": "forbidden_files",
-          "severity": "hard",
-          "passed": true,
-          "detail": "No never-commit path is touched"
-        },
-        {
-          "id": "build_ifdef_in_shared_device",
-          "severity": "hard",
-          "passed": true,
-          "detail": "No BUILD_* preprocessor test added under the shared device directories"
-        },
-        {
-          "id": "sdkconfig_churn",
-          "severity": "soft",
-          "passed": true,
-          "detail": "No incidental sdkconfig or version.h churn"
-        },
-        {
-          "id": "throw_in_firmware",
-          "severity": "soft",
-          "passed": true,
-          "detail": "No throw or try block added on a firmware path"
-        },
-        {
-          "id": "arduino_string",
-          "severity": "soft",
-          "passed": true,
-          "detail": "No Arduino String introduced"
-        },
-        {
-          "id": "fuji_error_unspecified",
-          "severity": "soft",
-          "passed": true,
-          "detail": "No comparison against FUJI_ERROR::UNSPECIFIED"
-        },
-        {
-          "id": "htole_bitshift",
-          "severity": "soft",
-          "passed": true,
-          "detail": "Wire data uses the u16le_t family, no htole/letoh calls added"
-        },
-        {
-          "id": "dead_test_dir",
-          "severity": "soft",
-          "passed": true,
-          "detail": "Nothing added under the dead test/ directory"
-        },
-        {
-          "id": "trailing_whitespace",
-          "severity": "soft",
-          "passed": true,
-          "detail": "No trailing whitespace or stray tabs in added lines"
-        },
-        {
-          "id": "has_description",
-          "severity": "soft",
-          "passed": true,
-          "detail": "Description is long enough to review"
-        },
-        {
-          "id": "size_bucket",
-          "severity": "info",
-          "passed": true,
-          "detail": "18 changed lines",
-          "value": "tiny"
-        },
-        {
-          "id": "shared_code_touched",
-          "severity": "info",
-          "passed": true,
-          "detail": "Touches shared code under lib/",
-          "value": "yes",
-          "evidence": [
-            "lib/hardware/ESP32UARTChannel.cpp"
-          ]
-        },
-        {
-          "id": "platform_scope",
-          "severity": "info",
-          "passed": true,
-          "detail": "Platforms inferred from paths and BUILD_* tokens",
-          "value": [
-            "rs232",
-            "coco"
-          ]
-        },
-        {
-          "id": "age_days",
-          "severity": "info",
-          "passed": true,
-          "detail": "Open 2 days",
-          "value": 2
-        },
-        {
-          "id": "has_unresolved_reviews",
-          "severity": "info",
-          "passed": true,
-          "detail": "No outstanding change requests",
-          "value": 0
-        }
-      ],
-      "prAnswers": {
-        "single_concern": {
-          "type": "noul",
-          "noul": 0.94
-        },
-        "explains_why": {
-          "type": "noul",
-          "noul": 0.96
-        },
-        "states_testing": {
-          "type": "noul",
-          "noul": 0.93
-        },
-        "needs_design_discussion": {
-          "type": "noul",
-          "noul": 0.05
-        },
-        "reviewer_directed_text": {
-          "type": "noul",
-          "noul": 0.01
-        },
-        "category": {
-          "type": "choice",
-          "choice": "bugfix",
-          "probabilities": {
-            "bugfix": 0.88,
-            "feature": 0.04,
-            "platform_bringup": 0.01,
-            "refactor": 0.04,
-            "build_ci": 0.01,
-            "docs": 0.005,
-            "mixed": 0.015
-          },
-          "confidence": 0.89
-        },
-        "risk": {
-          "type": "score",
-          "score": 1.07,
-          "legend": {
-            "0": "Cannot affect other platforms; isolated to one platform directory or docs",
-            "1": "Touches shared code but in a way the description shows is guarded or additive",
-            "2": "Changes shared behaviour that many platforms depend on",
-            "3": "Changes core bus, memory, or boot paths that every platform runs"
-          },
-          "probabilities": {
-            "0": 0.09,
-            "1": 0.762,
-            "2": 0.138,
-            "3": 0.01
-          },
-          "confidence": 0.81
-        },
-        "description_quality": {
-          "type": "score",
-          "score": 2.67,
-          "legend": {
-            "0": "Empty or one line with no context",
-            "1": "Says what changed but not why or how it was verified",
-            "2": "Explains the problem and the change; testing is vague",
-            "3": "Explains problem, change, testing, and any follow-ups or known gaps"
-          },
-          "probabilities": {
-            "0": 0.008,
-            "1": 0.007,
-            "2": 0.29,
-            "3": 0.695
-          },
-          "confidence": 0.86
-        }
-      },
-      "chunks": [
-        {
-          "chunk": {
-            "index": 0,
-            "files": [
-              "lib/hardware/ESP32UARTChannel.cpp",
-              "lib/hardware/ESP32UARTChannel.h"
-            ],
-            "tokensEstimate": 1240,
-            "truncated": false
-          },
-          "model": "jev-1.13.0",
-          "answers": {
-            "duplicates_platform_code": {
-              "type": "noul",
-              "noul": 0.072
-            },
-            "bypasses_abstractions": {
-              "type": "noul",
-              "noul": 0.043
-            },
-            "adds_global_state": {
-              "type": "noul",
-              "noul": 0.052
-            },
-            "narrating_comments": {
-              "type": "noul",
-              "noul": 0.052
-            },
-            "commented_out_code": {
-              "type": "noul",
-              "noul": 0.043
-            },
-            "bulk_reformat": {
-              "type": "noul",
-              "noul": 0.056
-            },
-            "bare_bool_status": {
-              "type": "noul",
-              "noul": 0.022
-            },
-            "layer_violation": {
-              "type": "noul",
-              "noul": 0.078
-            },
-            "hot_path_logging": {
-              "type": "noul",
-              "noul": 0.076
-            },
-            "unchecked_allocation": {
-              "type": "noul",
-              "noul": 0.022
-            },
-            "code_quality": {
-              "type": "score",
-              "score": 2.72,
-              "legend": {
-                "0": "Clearly violates several project rules",
-                "1": "One or two rule violations a reviewer would send back",
-                "2": "Minor nits only",
-                "3": "Follows the project rules with nothing to send back"
-              },
-              "probabilities": {
-                "0": 0.005,
-                "1": 0.011,
-                "2": 0.243,
-                "3": 0.741
-              },
-              "confidence": 0.84
-            }
-          },
-          "usage": {
-            "input_tokens": 1880,
-            "output_tokens": 0
-          }
-        }
-      ],
-      "coverage": "full",
-      "skippedFiles": [],
-      "aggregated": {
-        "duplicates_platform_code": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.072
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "bypasses_abstractions": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.043
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "adds_global_state": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.052
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "narrating_comments": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.052
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "commented_out_code": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.043
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "bulk_reformat": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.056
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "bare_bool_status": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.022
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "layer_violation": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.078
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "hot_path_logging": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.076
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "unchecked_allocation": {
-          "answer": {
-            "type": "noul",
-            "noul": 0.022
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        },
-        "code_quality": {
-          "answer": {
-            "type": "score",
-            "score": 2.72,
-            "legend": {
-              "0": "Clearly violates several project rules",
-              "1": "One or two rule violations a reviewer would send back",
-              "2": "Minor nits only",
-              "3": "Follows the project rules with nothing to send back"
-            },
-            "probabilities": {
-              "0": 0.005,
-              "1": 0.011,
-              "2": 0.243,
-              "3": 0.741
-            },
-            "confidence": 0.84
-          },
-          "fromChunk": 0,
-          "fromFiles": [
-            "lib/hardware/ESP32UARTChannel.cpp",
-            "lib/hardware/ESP32UARTChannel.h"
-          ]
-        }
-      },
-      "usage": {
-        "input_tokens": 5312,
-        "output_tokens": 0,
-        "calls": 2,
-        "estCostUsd": 0.000223
-      },
-      "decision": {
-        "kind": "READY",
-        "composite": 91.53,
-        "minConfidence": 0.81,
-        "uncertainNouls": [],
-        "reasons": [],
-        "explanation": [
-          "Composite 91.5 clears the ready threshold of 75 with every hard gate passing."
-        ],
-        "contributions": [
-          {
-            "questionId": "single_concern",
-            "weight": 2,
-            "goodness": 0.94,
-            "points": 7.83
-          },
-          {
-            "questionId": "explains_why",
-            "weight": 1.5,
-            "goodness": 0.96,
-            "points": 6
-          },
-          {
-            "questionId": "states_testing",
-            "weight": 1.5,
-            "goodness": 0.93,
-            "points": 5.81
-          },
-          {
-            "questionId": "needs_design_discussion",
-            "weight": 1.5,
-            "goodness": 0.95,
-            "points": 5.94
-          },
-          {
-            "questionId": "risk",
-            "weight": 2,
-            "goodness": 0.643,
-            "points": 5.36
-          },
-          {
-            "questionId": "description_quality",
-            "weight": 1,
-            "goodness": 0.89,
-            "points": 3.71
-          },
-          {
-            "questionId": "duplicates_platform_code",
-            "weight": 2,
-            "goodness": 0.928,
-            "points": 7.73
-          },
-          {
-            "questionId": "bypasses_abstractions",
-            "weight": 1.5,
-            "goodness": 0.957,
-            "points": 5.98
-          },
-          {
-            "questionId": "adds_global_state",
-            "weight": 1.5,
-            "goodness": 0.948,
-            "points": 5.93
-          },
-          {
-            "questionId": "narrating_comments",
-            "weight": 0.75,
-            "goodness": 0.948,
-            "points": 2.96
-          },
-          {
-            "questionId": "commented_out_code",
-            "weight": 0.75,
-            "goodness": 0.957,
-            "points": 2.99
-          },
-          {
-            "questionId": "bulk_reformat",
-            "weight": 1,
-            "goodness": 0.944,
-            "points": 3.93
-          },
-          {
-            "questionId": "bare_bool_status",
-            "weight": 1,
-            "goodness": 0.978,
-            "points": 4.08
-          },
-          {
-            "questionId": "layer_violation",
-            "weight": 1.5,
-            "goodness": 0.922,
-            "points": 5.76
-          },
-          {
-            "questionId": "hot_path_logging",
-            "weight": 1,
-            "goodness": 0.924,
-            "points": 3.85
-          },
-          {
-            "questionId": "unchecked_allocation",
-            "weight": 1.5,
-            "goodness": 0.978,
-            "points": 6.11
-          },
-          {
-            "questionId": "code_quality",
-            "weight": 2,
-            "goodness": 0.907,
-            "points": 7.56
-          }
-        ]
-      },
-      "policyVersion": "2026-09-20T09:14:02.000Z",
-      "durationMs": 3680
-    },
-    "stale": false,
-    "triage": null
   },
   {
     "snapshot": {
@@ -810,8 +191,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "atari-a8cas-fsk",
       "headSha": "3a7e5c9b1d4f6082a4c6e8f0b2d4f6081a3c5e7b",
-      "createdAt": "2026-09-09T18:12:00.000Z",
-      "updatedAt": "2026-09-11T18:12:00.000Z",
+      "createdAt": "2026-09-09T17:44:15.973Z",
+      "updatedAt": "2026-09-11T17:44:15.973Z",
       "labels": [
         "atari",
         "media"
@@ -953,13 +334,13 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
         "idolpx": "APPROVED"
       },
       "diffBytes": 41208,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": {
       "id": "ev_1632_3a7e5c9b",
       "prNumber": 1632,
       "headSha": "3a7e5c9b1d4f6082a4c6e8f0b2d4f6081a3c5e7b",
-      "evaluatedAt": "2026-09-20T18:00:00.000Z",
+      "evaluatedAt": "2026-09-20T17:32:15.973Z",
       "mock": true,
       "model": "jev-1.13.0",
       "gates": [
@@ -1794,7 +1175,7 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
     "triage": {
       "prNumber": 1632,
       "status": "untriaged",
-      "updatedAt": "2026-09-20T15:52:00.000Z"
+      "updatedAt": "2026-09-20T15:24:15.973Z"
     }
   },
   {
@@ -1810,8 +1191,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "fuji-pull-rom",
       "headSha": "c4f6a8b0d2e4f60810a2c4e6f80b2d4f6081a3c5",
-      "createdAt": "2026-09-06T18:12:00.000Z",
-      "updatedAt": "2026-09-20T17:34:00.000Z",
+      "createdAt": "2026-09-06T17:44:15.973Z",
+      "updatedAt": "2026-09-20T17:06:15.973Z",
       "labels": [
         "coco",
         "enhancement"
@@ -1922,13 +1303,13 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
         "tschak909": "CHANGES_REQUESTED"
       },
       "diffBytes": 37650,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": {
       "id": "ev_1630_b2d4f608",
       "prNumber": 1630,
       "headSha": "b2d4f6081a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b",
-      "evaluatedAt": "2026-09-20T17:55:00.000Z",
+      "evaluatedAt": "2026-09-20T17:27:15.973Z",
       "mock": true,
       "model": "jev-1.13.0",
       "gates": [
@@ -2701,7 +2082,7 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
     "triage": {
       "prNumber": 1630,
       "status": "untriaged",
-      "updatedAt": "2026-09-20T15:52:00.000Z"
+      "updatedAt": "2026-09-20T15:24:15.973Z"
     }
   },
   {
@@ -2717,8 +2098,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "fix-allocator-mismatch",
       "headSha": "5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b",
-      "createdAt": "2026-08-27T18:12:00.000Z",
-      "updatedAt": "2026-08-29T18:12:00.000Z",
+      "createdAt": "2026-08-27T17:44:15.973Z",
+      "updatedAt": "2026-08-29T17:44:15.973Z",
       "labels": [
         "bugfix",
         "memory"
@@ -2800,13 +2181,13 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
         "mozzwald": "APPROVED"
       },
       "diffBytes": 7930,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": {
       "id": "ev_1611_5e7b9d1f",
       "prNumber": 1611,
       "headSha": "5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b",
-      "evaluatedAt": "2026-09-20T18:00:00.000Z",
+      "evaluatedAt": "2026-09-20T17:32:15.973Z",
       "mock": true,
       "model": "jev-1.13.0",
       "gates": [
@@ -3419,7 +2800,7 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "prNumber": 1611,
       "status": "triaged",
       "note": "Reviewed on the call, merging after the release freeze lifts.",
-      "updatedAt": "2026-09-20T15:52:00.000Z",
+      "updatedAt": "2026-09-20T15:24:15.973Z",
       "by": "mozzwald"
     }
   },
@@ -3436,8 +2817,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "astrocade",
       "headSha": "7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c",
-      "createdAt": "2026-08-13T18:12:00.000Z",
-      "updatedAt": "2026-08-15T18:12:00.000Z",
+      "createdAt": "2026-08-13T17:44:15.973Z",
+      "updatedAt": "2026-08-15T17:44:15.973Z",
       "labels": [
         "astrocade",
         "new platform"
@@ -3963,13 +3344,13 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
         "idolpx": "COMMENTED"
       },
       "diffBytes": 486210,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": {
       "id": "ev_1605_7a9c1e3b",
       "prNumber": 1605,
       "headSha": "7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c",
-      "evaluatedAt": "2026-09-20T17:59:00.000Z",
+      "evaluatedAt": "2026-09-20T17:31:15.973Z",
       "mock": true,
       "model": "jev-1.13.0",
       "gates": [
@@ -5658,7 +5039,7 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "prNumber": 1605,
       "status": "snoozed",
       "note": "Waiting on the design discussion in #1598 before another pass.",
-      "updatedAt": "2026-09-20T15:52:00.000Z",
+      "updatedAt": "2026-09-20T15:24:15.973Z",
       "by": "tschak909"
     }
   },
@@ -5675,8 +5056,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "msx-rom-db",
       "headSha": "1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f",
-      "createdAt": "2026-03-17T18:12:00.000Z",
-      "updatedAt": "2026-03-19T18:12:00.000Z",
+      "createdAt": "2026-03-17T17:44:15.973Z",
+      "updatedAt": "2026-03-19T17:44:15.973Z",
       "labels": [
         "msx",
         "draft"
@@ -5781,13 +5162,13 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
         "tschak909": "CHANGES_REQUESTED"
       },
       "diffBytes": 168440,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": {
       "id": "ev_1359_1d3f5a7c",
       "prNumber": 1359,
       "headSha": "1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f",
-      "evaluatedAt": "2026-09-20T18:00:00.000Z",
+      "evaluatedAt": "2026-09-20T17:32:15.973Z",
       "mock": true,
       "model": "jev-1.13.0",
       "gates": [
@@ -6558,7 +5939,7 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
     "triage": {
       "prNumber": 1359,
       "status": "untriaged",
-      "updatedAt": "2026-09-20T15:52:00.000Z"
+      "updatedAt": "2026-09-20T15:24:15.973Z"
     }
   },
   {
@@ -6574,8 +5955,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "apple-write-protect",
       "headSha": "e1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9",
-      "createdAt": "2026-09-14T18:12:00.000Z",
-      "updatedAt": "2026-09-16T18:12:00.000Z",
+      "createdAt": "2026-09-14T17:44:15.973Z",
+      "updatedAt": "2026-09-16T17:44:15.973Z",
       "labels": [
         "apple",
         "bugfix"
@@ -6648,13 +6029,13 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "commentCount": 1,
       "latestReviewStates": {},
       "diffBytes": 4820,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": {
       "id": "ev_1621_e1f3a5c7",
       "prNumber": 1621,
       "headSha": "e1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9",
-      "evaluatedAt": "2026-09-20T17:57:00.000Z",
+      "evaluatedAt": "2026-09-20T17:29:15.973Z",
       "mock": true,
       "model": "jev-1.13.0",
       "gates": [
@@ -6815,7 +6196,7 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
     "triage": {
       "prNumber": 1621,
       "status": "untriaged",
-      "updatedAt": "2026-09-20T15:52:00.000Z"
+      "updatedAt": "2026-09-20T15:24:15.973Z"
     }
   },
   {
@@ -6831,8 +6212,8 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
       "base": "master",
       "headRef": "coco-drivewire-tables",
       "headSha": "c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7",
-      "createdAt": "2026-08-10T18:12:00.000Z",
-      "updatedAt": "2026-08-12T18:12:00.000Z",
+      "createdAt": "2026-08-10T17:44:15.973Z",
+      "updatedAt": "2026-08-12T17:44:15.973Z",
       "labels": [
         "coco",
         "drivewire"
@@ -6907,13 +6288,13 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
         "tschak909": "COMMENTED"
       },
       "diffBytes": 851204,
-      "fetchedAt": "2026-09-20T18:00:00.000Z"
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
     },
     "evaluation": {
       "id": "ev_1598_c9e1b3d5",
       "prNumber": 1598,
       "headSha": "c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7",
-      "evaluatedAt": "2026-09-20T17:59:00.000Z",
+      "evaluatedAt": "2026-09-20T17:31:15.973Z",
       "mock": true,
       "model": "jev-1.13.0",
       "gates": [
@@ -7189,16 +6570,695 @@ export const FIXTURE_PRS: Array<PrListItem & { fetchError?: string }> = [
     "triage": {
       "prNumber": 1598,
       "status": "untriaged",
-      "updatedAt": "2026-09-20T15:52:00.000Z"
+      "updatedAt": "2026-09-20T15:24:15.973Z"
     }
   }
 ];
 
 // History per PR (newest first). Derived from the list above so the same evaluation
 // object is shared rather than duplicated into the bundle.
+// PRs that left the board but kept their history: GET /api/prs/closed.
+export const FIXTURE_CLOSED_PRS: Array<PrListItem & { fetchError?: string }> = [
+  {
+    "snapshot": {
+      "number": 1650,
+      "title": "[rs232] limit UART RTS/CTS hardware flow control to COCO_HS_UART",
+      "body": "The RS232 build enables hardware flow control on every UART, which wedges the FujiNet when a host leaves CTS low. Only the COCO high speed UART path actually needs RTS/CTS, so gate the call on COCO_HS_UART and leave the other UARTs in software flow control.\n\nWhy: reported on Discord by two RS232 users whose FujiNet stopped responding after the host closed the port.\n\nTested: built and flashed the RS232 target on an ESP32-WROVER, ran a 2 MB XMODEM transfer at 115200 both directions, and confirmed the COCO high speed path still negotiates at 230400.",
+      "author": "mozzwald",
+      "authorAssociation": "MEMBER",
+      "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650",
+      "draft": false,
+      "state": "closed",
+      "base": "master",
+      "headRef": "rs232-flowctl-coco",
+      "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
+      "createdAt": "2026-09-18T17:44:15.973Z",
+      "updatedAt": "2026-09-20T17:44:15.973Z",
+      "labels": [
+        "rs232",
+        "bugfix"
+      ],
+      "mergeable": true,
+      "mergeableState": "clean",
+      "additions": 13,
+      "deletions": 5,
+      "changedFiles": 2,
+      "files": [
+        {
+          "path": "lib/hardware/ESP32UARTChannel.cpp",
+          "status": "modified",
+          "additions": 11,
+          "deletions": 4
+        },
+        {
+          "path": "lib/hardware/ESP32UARTChannel.h",
+          "status": "modified",
+          "additions": 2,
+          "deletions": 1
+        }
+      ],
+      "checks": [
+        {
+          "name": "macOS 14 ARM: Target ATARI",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171200"
+        },
+        {
+          "name": "Ubuntu: Target ATARI",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171201"
+        },
+        {
+          "name": "Ubuntu: Target RS232",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171202"
+        },
+        {
+          "name": "Ubuntu: Target COCO",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171203"
+        },
+        {
+          "name": "Windows: Target APPLE",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171204"
+        },
+        {
+          "name": "FujiNet-PC: ctest",
+          "status": "completed",
+          "conclusion": "success",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/actions/runs/171205"
+        }
+      ],
+      "ci": "green",
+      "reviewCount": 1,
+      "commentCount": 2,
+      "latestReviewStates": {
+        "apc": "APPROVED"
+      },
+      "diffBytes": 1842,
+      "fetchedAt": "2026-09-20T17:32:15.973Z"
+    },
+    "evaluation": {
+      "id": "ev_1650_9f3c1d2a",
+      "prNumber": 1650,
+      "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
+      "evaluatedAt": "2026-09-20T17:28:15.973Z",
+      "mock": true,
+      "model": "jev-1.13.0",
+      "gates": [
+        {
+          "id": "not_draft",
+          "severity": "hard",
+          "passed": true,
+          "detail": "Pull request is not a draft"
+        },
+        {
+          "id": "mergeable",
+          "severity": "hard",
+          "passed": true,
+          "detail": "GitHub reports the branch merges cleanly"
+        },
+        {
+          "id": "ci_green",
+          "severity": "hard",
+          "passed": true,
+          "detail": "No check run reports failure, timed out, or cancelled"
+        },
+        {
+          "id": "forbidden_files",
+          "severity": "hard",
+          "passed": true,
+          "detail": "No never-commit path is touched"
+        },
+        {
+          "id": "build_ifdef_in_shared_device",
+          "severity": "hard",
+          "passed": true,
+          "detail": "No BUILD_* preprocessor test added under the shared device directories"
+        },
+        {
+          "id": "sdkconfig_churn",
+          "severity": "soft",
+          "passed": true,
+          "detail": "No incidental sdkconfig or version.h churn"
+        },
+        {
+          "id": "throw_in_firmware",
+          "severity": "soft",
+          "passed": true,
+          "detail": "No throw or try block added on a firmware path"
+        },
+        {
+          "id": "arduino_string",
+          "severity": "soft",
+          "passed": true,
+          "detail": "No Arduino String introduced"
+        },
+        {
+          "id": "fuji_error_unspecified",
+          "severity": "soft",
+          "passed": true,
+          "detail": "No comparison against FUJI_ERROR::UNSPECIFIED"
+        },
+        {
+          "id": "htole_bitshift",
+          "severity": "soft",
+          "passed": true,
+          "detail": "Wire data uses the u16le_t family, no htole/letoh calls added"
+        },
+        {
+          "id": "dead_test_dir",
+          "severity": "soft",
+          "passed": true,
+          "detail": "Nothing added under the dead test/ directory"
+        },
+        {
+          "id": "trailing_whitespace",
+          "severity": "soft",
+          "passed": true,
+          "detail": "No trailing whitespace or stray tabs in added lines"
+        },
+        {
+          "id": "has_description",
+          "severity": "soft",
+          "passed": true,
+          "detail": "Description is long enough to review"
+        },
+        {
+          "id": "size_bucket",
+          "severity": "info",
+          "passed": true,
+          "detail": "18 changed lines",
+          "value": "tiny"
+        },
+        {
+          "id": "shared_code_touched",
+          "severity": "info",
+          "passed": true,
+          "detail": "Touches shared code under lib/",
+          "value": "yes",
+          "evidence": [
+            "lib/hardware/ESP32UARTChannel.cpp"
+          ]
+        },
+        {
+          "id": "platform_scope",
+          "severity": "info",
+          "passed": true,
+          "detail": "Platforms inferred from paths and BUILD_* tokens",
+          "value": [
+            "rs232",
+            "coco"
+          ]
+        },
+        {
+          "id": "age_days",
+          "severity": "info",
+          "passed": true,
+          "detail": "Open 2 days",
+          "value": 2
+        },
+        {
+          "id": "has_unresolved_reviews",
+          "severity": "info",
+          "passed": true,
+          "detail": "No outstanding change requests",
+          "value": 0
+        }
+      ],
+      "prAnswers": {
+        "single_concern": {
+          "type": "noul",
+          "noul": 0.94
+        },
+        "explains_why": {
+          "type": "noul",
+          "noul": 0.96
+        },
+        "states_testing": {
+          "type": "noul",
+          "noul": 0.93
+        },
+        "needs_design_discussion": {
+          "type": "noul",
+          "noul": 0.05
+        },
+        "reviewer_directed_text": {
+          "type": "noul",
+          "noul": 0.01
+        },
+        "category": {
+          "type": "choice",
+          "choice": "bugfix",
+          "probabilities": {
+            "bugfix": 0.88,
+            "feature": 0.04,
+            "platform_bringup": 0.01,
+            "refactor": 0.04,
+            "build_ci": 0.01,
+            "docs": 0.005,
+            "mixed": 0.015
+          },
+          "confidence": 0.89
+        },
+        "risk": {
+          "type": "score",
+          "score": 1.07,
+          "legend": {
+            "0": "Cannot affect other platforms; isolated to one platform directory or docs",
+            "1": "Touches shared code but in a way the description shows is guarded or additive",
+            "2": "Changes shared behaviour that many platforms depend on",
+            "3": "Changes core bus, memory, or boot paths that every platform runs"
+          },
+          "probabilities": {
+            "0": 0.09,
+            "1": 0.762,
+            "2": 0.138,
+            "3": 0.01
+          },
+          "confidence": 0.81
+        },
+        "description_quality": {
+          "type": "score",
+          "score": 2.67,
+          "legend": {
+            "0": "Empty or one line with no context",
+            "1": "Says what changed but not why or how it was verified",
+            "2": "Explains the problem and the change; testing is vague",
+            "3": "Explains problem, change, testing, and any follow-ups or known gaps"
+          },
+          "probabilities": {
+            "0": 0.008,
+            "1": 0.007,
+            "2": 0.29,
+            "3": 0.695
+          },
+          "confidence": 0.86
+        },
+        "revision_removes_behaviour": {
+          "type": "choice",
+          "choice": "removes",
+          "probabilities": {
+            "removes": 0.74,
+            "restricts": 0.08,
+            "relocates": 0.09,
+            "adds": 0.03,
+            "unchanged": 0.06
+          },
+          "confidence": 0.71
+        },
+        "body_matches_diff": {
+          "type": "noul",
+          "noul": 0.21
+        },
+        "maintainer_requested_change": {
+          "type": "noul",
+          "noul": 0.83
+        },
+        "author_claims_need_verification": {
+          "type": "noul",
+          "noul": 0.86
+        }
+      },
+      "chunks": [
+        {
+          "chunk": {
+            "index": 0,
+            "files": [
+              "lib/hardware/ESP32UARTChannel.cpp",
+              "lib/hardware/ESP32UARTChannel.h"
+            ],
+            "tokensEstimate": 1240,
+            "truncated": false
+          },
+          "model": "jev-1.13.0",
+          "answers": {
+            "duplicates_platform_code": {
+              "type": "noul",
+              "noul": 0.072
+            },
+            "bypasses_abstractions": {
+              "type": "noul",
+              "noul": 0.043
+            },
+            "adds_global_state": {
+              "type": "noul",
+              "noul": 0.052
+            },
+            "narrating_comments": {
+              "type": "noul",
+              "noul": 0.052
+            },
+            "commented_out_code": {
+              "type": "noul",
+              "noul": 0.043
+            },
+            "bulk_reformat": {
+              "type": "noul",
+              "noul": 0.056
+            },
+            "bare_bool_status": {
+              "type": "noul",
+              "noul": 0.022
+            },
+            "layer_violation": {
+              "type": "noul",
+              "noul": 0.078
+            },
+            "hot_path_logging": {
+              "type": "noul",
+              "noul": 0.076
+            },
+            "unchecked_allocation": {
+              "type": "noul",
+              "noul": 0.022
+            },
+            "code_quality": {
+              "type": "score",
+              "score": 2.72,
+              "legend": {
+                "0": "Clearly violates several project rules",
+                "1": "One or two rule violations a reviewer would send back",
+                "2": "Minor nits only",
+                "3": "Follows the project rules with nothing to send back"
+              },
+              "probabilities": {
+                "0": 0.005,
+                "1": 0.011,
+                "2": 0.243,
+                "3": 0.741
+              },
+              "confidence": 0.84
+            }
+          },
+          "usage": {
+            "input_tokens": 1880,
+            "output_tokens": 0
+          }
+        }
+      ],
+      "coverage": "full",
+      "skippedFiles": [],
+      "aggregated": {
+        "duplicates_platform_code": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.072
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "bypasses_abstractions": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.043
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "adds_global_state": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.052
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "narrating_comments": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.052
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "commented_out_code": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.043
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "bulk_reformat": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.056
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "bare_bool_status": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.022
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "layer_violation": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.078
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "hot_path_logging": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.076
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "unchecked_allocation": {
+          "answer": {
+            "type": "noul",
+            "noul": 0.022
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        },
+        "code_quality": {
+          "answer": {
+            "type": "score",
+            "score": 2.72,
+            "legend": {
+              "0": "Clearly violates several project rules",
+              "1": "One or two rule violations a reviewer would send back",
+              "2": "Minor nits only",
+              "3": "Follows the project rules with nothing to send back"
+            },
+            "probabilities": {
+              "0": 0.005,
+              "1": 0.011,
+              "2": 0.243,
+              "3": 0.741
+            },
+            "confidence": 0.84
+          },
+          "fromChunk": 0,
+          "fromFiles": [
+            "lib/hardware/ESP32UARTChannel.cpp",
+            "lib/hardware/ESP32UARTChannel.h"
+          ]
+        }
+      },
+      "usage": {
+        "input_tokens": 5312,
+        "output_tokens": 0,
+        "calls": 2,
+        "estCostUsd": 0.000223
+      },
+      "decision": {
+        "kind": "READY",
+        "composite": 87.39,
+        "minConfidence": 0.81,
+        "uncertainNouls": [],
+        "reasons": [
+          {
+            "code": "revision_removed_behaviour",
+            "text": "Jev is 74% sure the latest revision removed behaviour rather than restricting or relocating it",
+            "source": "jev",
+            "questionId": "revision_removes_behaviour"
+          },
+          {
+            "code": "description_drift",
+            "text": "The description no longer matches the diff (body_matches_diff at 21%, 3 drift signal(s) in the dossier)",
+            "source": "jev",
+            "questionId": "body_matches_diff"
+          },
+          {
+            "code": "deep_analysis_suggested",
+            "text": "#1628 (wdathing, 3 days ago) added the 5 lines this revision deletes, and that author is not in the thread",
+            "source": "jev"
+          }
+        ],
+        "explanation": [
+          "Composite 87.4 clears the ready threshold of 75 with every hard gate passing.",
+          "The latest revision reads as removing behaviour outright (74% on revision_removes_behaviour), not narrowing it.",
+          "The title and body describe an earlier version of this change; see the dossier drift warnings.",
+          "A deep pass would help here: #1628 (wdathing, 3 days ago) added the 5 lines this revision deletes, and that author is not in the thread."
+        ],
+        "contributions": [
+          {
+            "questionId": "single_concern",
+            "weight": 2,
+            "goodness": 0.94,
+            "points": 7.37
+          },
+          {
+            "questionId": "explains_why",
+            "weight": 1.5,
+            "goodness": 0.96,
+            "points": 5.65
+          },
+          {
+            "questionId": "states_testing",
+            "weight": 1.5,
+            "goodness": 0.93,
+            "points": 5.47
+          },
+          {
+            "questionId": "needs_design_discussion",
+            "weight": 1.5,
+            "goodness": 0.95,
+            "points": 5.59
+          },
+          {
+            "questionId": "risk",
+            "weight": 2,
+            "goodness": 0.643,
+            "points": 5.04
+          },
+          {
+            "questionId": "description_quality",
+            "weight": 1,
+            "goodness": 0.89,
+            "points": 3.49
+          },
+          {
+            "questionId": "body_matches_diff",
+            "weight": 1.5,
+            "goodness": 0.21,
+            "points": 1.24
+          },
+          {
+            "questionId": "duplicates_platform_code",
+            "weight": 2,
+            "goodness": 0.928,
+            "points": 7.28
+          },
+          {
+            "questionId": "bypasses_abstractions",
+            "weight": 1.5,
+            "goodness": 0.957,
+            "points": 5.63
+          },
+          {
+            "questionId": "adds_global_state",
+            "weight": 1.5,
+            "goodness": 0.948,
+            "points": 5.58
+          },
+          {
+            "questionId": "narrating_comments",
+            "weight": 0.75,
+            "goodness": 0.948,
+            "points": 2.79
+          },
+          {
+            "questionId": "commented_out_code",
+            "weight": 0.75,
+            "goodness": 0.957,
+            "points": 2.81
+          },
+          {
+            "questionId": "bulk_reformat",
+            "weight": 1,
+            "goodness": 0.944,
+            "points": 3.7
+          },
+          {
+            "questionId": "bare_bool_status",
+            "weight": 1,
+            "goodness": 0.978,
+            "points": 3.84
+          },
+          {
+            "questionId": "layer_violation",
+            "weight": 1.5,
+            "goodness": 0.922,
+            "points": 5.42
+          },
+          {
+            "questionId": "hot_path_logging",
+            "weight": 1,
+            "goodness": 0.924,
+            "points": 3.62
+          },
+          {
+            "questionId": "unchecked_allocation",
+            "weight": 1.5,
+            "goodness": 0.978,
+            "points": 5.75
+          },
+          {
+            "questionId": "code_quality",
+            "weight": 2,
+            "goodness": 0.907,
+            "points": 7.11
+          }
+        ]
+      },
+      "policyVersion": "2026-09-20T09:14:02.000Z",
+      "durationMs": 3680
+    },
+    "stale": false,
+    "triage": null
+  }
+];
+
 export const FIXTURE_EVALUATION_HISTORY: Record<number, Evaluation[]> = (() => {
   const out: Record<number, Evaluation[]> = {};
-  for (const item of FIXTURE_PRS) {
+  for (const item of [...FIXTURE_PRS, ...FIXTURE_CLOSED_PRS]) {
     if (item.evaluation) out[item.snapshot.number] = [item.evaluation];
   }
   return out;
@@ -7224,7 +7284,7 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
       "htole_bitshift: 3 added lines call the htole/letoh family instead of the u16le_t types (minus 6 points)",
       "dead_test_dir: 1 path added under the dead test/ directory (minus 6 points)"
     ],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   },
   "1598": {
     "id": "prop_1598_c9e1b3d5",
@@ -7241,7 +7301,7 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
       "The diff could not be read from GitHub, so no code was judged",
       "Size bucket huge is never routed READY automatically"
     ],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   },
   "1605": {
     "id": "prop_1605_7a9c1e3b",
@@ -7262,7 +7322,7 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
       "sdkconfig_churn: sdkconfig.astrocade and include/version.h are swept in with 74 source files (minus 6 points)",
       "throw_in_firmware: 4 added lines use throw or try on a firmware path (minus 6 points)"
     ],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   },
   "1611": {
     "id": "prop_1611_5e7b9d1f",
@@ -7276,7 +7336,7 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
       "triage/ready"
     ],
     "rationale": [],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   },
   "1621": {
     "id": "prop_1621_e1f3a5c7",
@@ -7293,7 +7353,7 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
       "Jev did not answer the pull request level request; routed on gates alone",
       "Composite 0.0 is below the review threshold of 45"
     ],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   },
   "1630": {
     "id": "prop_1630_b2d4f608",
@@ -7314,7 +7374,7 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
       "Duplicates shared platform code: Jev is 68% sure (worst in lib/device/drivewire/fuji.cpp)",
       "Bypasses project abstractions: Jev is 62% sure (worst in lib/bus/drivewire/drivewire.cpp)"
     ],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   },
   "1632": {
     "id": "prop_1632_3a7e5c9b",
@@ -7335,7 +7395,7 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
       "Composite 48.6 sits between 45 and 75",
       "7 questions landed in the uncertain band (limit 2): single_concern, explains_why, bypasses_abstractions, adds_global_state, narrating_comments, bare_bool_status, hot_path_logging"
     ],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   },
   "1650": {
     "id": "prop_1650_9f3c1d2a",
@@ -7344,12 +7404,16 @@ export const FIXTURE_PROPOSALS: Record<number, Proposal> = {
     "evaluationId": "ev_1650_9f3c1d2a",
     "kind": "comment",
     "title": "Triage comment: looks ready for a maintainer pass",
-    "body": "### Automated triage: READY\n\nComposite score **91.5** of 100, every hard gate passing.\n\nWhat passed:\n\n- `not_draft`: Pull request is not a draft\n- `mergeable`: GitHub reports the branch merges cleanly\n- `ci_green`: No check run reports failure, timed out, or cancelled\n- `forbidden_files`: No never-commit path is touched\n- `build_ifdef_in_shared_device`: No BUILD_* preprocessor test added under the shared device directories\n\nA maintainer still reads this before merge; nothing here is automatic.\n\nDrafted by the FujiNet PR triage harness (Jev jev-1.13.0); posted by {{confirmedBy}} after human review.",
+    "body": "### Automated triage: READY\n\nComposite score **87.4** of 100, every hard gate passing.\n\nWhat passed:\n\n- `not_draft`: Pull request is not a draft\n- `mergeable`: GitHub reports the branch merges cleanly\n- `ci_green`: No check run reports failure, timed out, or cancelled\n- `forbidden_files`: No never-commit path is touched\n- `build_ifdef_in_shared_device`: No BUILD_* preprocessor test added under the shared device directories\n\nA maintainer still reads this before merge; nothing here is automatic.\n\nDrafted by the FujiNet PR triage harness (Jev jev-1.13.0); posted by {{confirmedBy}} after human review.",
     "labels": [
       "triage/ready"
     ],
-    "rationale": [],
-    "generatedAt": "2026-09-20T18:02:00.000Z"
+    "rationale": [
+      "Jev is 74% sure the latest revision removed behaviour rather than restricting or relocating it",
+      "The description no longer matches the diff (body_matches_diff at 21%, 3 drift signal(s) in the dossier)",
+      "#1628 (wdathing, 3 days ago) added the 5 lines this revision deletes, and that author is not in the thread"
+    ],
+    "generatedAt": "2026-09-20T17:34:15.973Z"
   }
 };
 
@@ -7362,7 +7426,7 @@ export const FIXTURE_ACTIONS: ActionRecord[] = [
     "kind": "comment",
     "body": "### Automated triage: READY\n\nComposite score 82.4 of 100, every hard gate passing.\n\nDrafted by the FujiNet PR triage harness (Jev jev-1.13.0); posted by mozzwald after human review.",
     "confirmedBy": "mozzwald",
-    "requestedAt": "2026-09-20T16:36:00.000Z",
+    "requestedAt": "2026-09-20T16:08:15.973Z",
     "outcome": "refused_writes_disabled",
     "error": "ALLOW_GITHUB_WRITES is not set to 1; nothing was sent to GitHub. The draft is kept in the audit log."
   },
@@ -7374,7 +7438,7 @@ export const FIXTURE_ACTIONS: ActionRecord[] = [
     "kind": "review_request_changes",
     "body": "### Automated triage: BLOCKED\n\nThe following hard blockers need clearing before review can start:\n\n- [ ] **ci_green**: 3 check runs failed\n- [ ] **forbidden_files**: 3 never-commit paths are touched\n- [ ] **build_ifdef_in_shared_device**: BUILD_* preprocessor test added under lib/device/fujiDevice/",
     "confirmedBy": "tschak909",
-    "requestedAt": "2026-09-20T16:58:00.000Z",
+    "requestedAt": "2026-09-20T16:30:15.973Z",
     "outcome": "refused_writes_disabled",
     "error": "ALLOW_GITHUB_WRITES is not set to 1; nothing was sent to GitHub. The draft is kept in the audit log."
   },
@@ -7385,7 +7449,7 @@ export const FIXTURE_ACTIONS: ActionRecord[] = [
     "proposalId": "prop_1630_b2d4f608",
     "kind": "comment",
     "confirmedBy": "idolpx",
-    "requestedAt": "2026-09-20T17:20:00.000Z",
+    "requestedAt": "2026-09-20T16:52:15.973Z",
     "outcome": "refused_stale",
     "error": "The PR moved to head sha c4f6a8b0 after this evaluation; re-evaluate before posting."
   },
@@ -7396,7 +7460,7 @@ export const FIXTURE_ACTIONS: ActionRecord[] = [
     "proposalId": "prop_1650_9f3c1d2a",
     "kind": "comment",
     "confirmedBy": "mozzwal",
-    "requestedAt": "2026-09-20T17:41:00.000Z",
+    "requestedAt": "2026-09-20T17:13:15.973Z",
     "outcome": "refused_bad_confirm",
     "error": "Confirmation text did not match CONFIRM."
   },
@@ -7410,7 +7474,7 @@ export const FIXTURE_ACTIONS: ActionRecord[] = [
       "triage/ready"
     ],
     "confirmedBy": "mozzwald",
-    "requestedAt": "2026-09-20T17:44:00.000Z",
+    "requestedAt": "2026-09-20T17:16:15.973Z",
     "outcome": "refused_writes_disabled",
     "error": "ALLOW_GITHUB_WRITES is not set to 1; nothing was sent to GitHub. The draft is kept in the audit log."
   }
@@ -7418,22 +7482,954 @@ export const FIXTURE_ACTIONS: ActionRecord[] = [
 
 export const FIXTURE_STATS: StatsSummary = {
   "counts": {
-    "READY": 2,
+    "READY": 1,
     "NEEDS_REVIEW": 4,
     "BLOCKED": 2,
     "UNEVALUATED": 1
   },
-  "tokensUsed": 310612,
-  "estCostUsd": 0.013,
-  "lastScanAt": "2026-09-20T18:01:00.000Z"
+  "tokensUsed": 305300,
+  "estCostUsd": 0.0128,
+  "lastScanAt": "2026-09-20T17:33:15.973Z"
 };
 
 export const FIXTURE_SCAN_JOB: ScanJob = {
   "id": "job_01JQ7WZ0",
-  "startedAt": "2026-09-20T17:58:00.000Z",
-  "finishedAt": "2026-09-20T18:01:00.000Z",
+  "startedAt": "2026-09-20T17:30:15.973Z",
+  "finishedAt": "2026-09-20T17:33:15.973Z",
   "total": 7,
   "done": 7,
   "errors": [],
   "status": "done"
+};
+
+// ---------------------------------------------------------------- deep analysis
+// Modelled on the PR 1650 case in DESIGN-deep.md "Why": revision 1 wrapped a flow
+// control block in an #ifdef, a maintainer objected, revision 2 deleted it, and the
+// five deleted lines came from #1628, merged three days earlier.
+
+export const FIXTURE_DOSSIERS: Record<number, Dossier> = {
+  "1605": {
+    "prNumber": 1605,
+    "headSha": "7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c",
+    "baseSha": "1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a",
+    "builtAt": "2026-09-20T17:38:15.973Z",
+    "revisions": [
+      {
+        "headSha": "7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c",
+        "pushedAt": "2026-08-15T17:44:15.973Z",
+        "commits": [
+          {
+            "sha": "d8f0a2c4e6b8d0f2a4c6e8b0d2f4a6c8e0b2d4f6",
+            "date": "2026-08-13T17:44:15.973Z",
+            "author": "jeffpiep",
+            "subject": "astrocade: bus, device, media, pico target"
+          }
+        ],
+        "additions": 13391,
+        "deletions": 98,
+        "changedFiles": 78
+      }
+    ],
+    "latestDelta": null,
+    "deletedLineOrigins": [],
+    "originPrs": [],
+    "thread": [
+      {
+        "kind": "review",
+        "at": "2026-08-21T17:44:15.973Z",
+        "author": "tschak909",
+        "association": "MEMBER",
+        "isMaintainer": true,
+        "state": "CHANGES_REQUESTED",
+        "body": "This needs to be split and the design agreed first. See #1598 for the bus discussion.",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1605#pullrequestreview-331002"
+      }
+    ],
+    "maintainers": [
+      "tschak909"
+    ],
+    "crossRefs": [],
+    "drift": [],
+    "availability": {
+      "git": false,
+      "provenance": false,
+      "crossRefs": false,
+      "notes": [
+        "git was not found on this host, so the local checkout at data/repo could not be created.",
+        "Provenance for deleted lines and cross references are unavailable; the GitHub thread and revision list are not affected."
+      ]
+    }
+  },
+  "1632": {
+    "prNumber": 1632,
+    "headSha": "3a7e5c9b1d4f6082a4c6e8f0b2d4f6081a3c5e7b",
+    "baseSha": "5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e",
+    "builtAt": "2026-09-20T17:37:15.973Z",
+    "revisions": [
+      {
+        "headSha": "3a7e5c9b1d4f6082a4c6e8f0b2d4f6081a3c5e7b",
+        "pushedAt": "2026-09-11T17:44:15.973Z",
+        "commits": [
+          {
+            "sha": "b4d6f8a0c2e4b6d8f0a2c4e6b8d0f2a4c6e8b0d2",
+            "date": "2026-09-09T17:44:15.973Z",
+            "author": "tschak909",
+            "subject": "Atari: A8CAS FSK playback"
+          },
+          {
+            "sha": "c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c2e4",
+            "date": "2026-09-11T17:44:15.973Z",
+            "author": "tschak909",
+            "subject": "Atari: recoverable cassette rewind"
+          }
+        ],
+        "additions": 696,
+        "deletions": 116,
+        "changedFiles": 14
+      }
+    ],
+    "latestDelta": null,
+    "deletedLineOrigins": [],
+    "originPrs": [],
+    "thread": [
+      {
+        "kind": "issue_comment",
+        "at": "2026-09-12T17:44:15.973Z",
+        "author": "mozzwald",
+        "association": "MEMBER",
+        "isMaintainer": true,
+        "body": "Nice. Does the FSK path keep the DAC busy during a rewind, or does it idle?",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1632#issuecomment-4401221"
+      },
+      {
+        "kind": "issue_comment",
+        "at": "2026-09-13T17:44:15.973Z",
+        "author": "tschak909",
+        "association": "MEMBER",
+        "isMaintainer": true,
+        "body": "It idles. The timer is stopped in cassette.cpp before the seek, and restarted after.",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1632#issuecomment-4402004"
+      }
+    ],
+    "maintainers": [
+      "mozzwald",
+      "tschak909"
+    ],
+    "crossRefs": [],
+    "drift": [],
+    "availability": {
+      "git": true,
+      "provenance": true,
+      "crossRefs": true,
+      "notes": [
+        "No previous head is recorded for this pull request, so there is no revision delta."
+      ]
+    }
+  },
+  "1650": {
+    "prNumber": 1650,
+    "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
+    "baseSha": "7f1e3d5b7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+    "builtAt": "2026-09-20T17:35:15.973Z",
+    "revisions": [
+      {
+        "headSha": "2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c",
+        "pushedAt": "2026-09-15T17:44:15.973Z",
+        "commits": [
+          {
+            "sha": "a7c3e91d5b8f2a4c6e8d0b2f4a6c8e0d2b4f6a8c",
+            "date": "2026-09-15T17:44:15.973Z",
+            "author": "mozzwald",
+            "subject": "[rs232] guard RTS/CTS flow control behind COCO_HS_UART"
+          }
+        ],
+        "additions": 9,
+        "deletions": 2,
+        "changedFiles": 1
+      },
+      {
+        "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
+        "pushedAt": "2026-09-18T17:44:15.973Z",
+        "commits": [
+          {
+            "sha": "e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1",
+            "date": "2026-09-18T17:44:15.973Z",
+            "author": "mozzwald",
+            "subject": "[rs232] drop the RTS/CTS block instead of guarding it"
+          }
+        ],
+        "additions": 11,
+        "deletions": 4,
+        "changedFiles": 2
+      }
+    ],
+    "latestDelta": {
+      "fromSha": "2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c",
+      "toSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
+      "diff": "--- a/lib/hardware/ESP32UARTChannel.cpp\n+++ b/lib/hardware/ESP32UARTChannel.cpp\n@@ -81,13 +81,8 @@ void ESP32UARTChannel::begin(int baud)\n     uart_param_config(_uart_num, &uart_config);\n     uart_set_pin(_uart_num, _tx_pin, _rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);\n \n-#ifdef COCO_HS_UART\n-    // hardware flow control is only wired on the CoCo high speed board\n-    uart_set_hw_flow_ctrl(_uart_num, UART_HW_FLOWCTRL_CTS_RTS, 122);\n-    uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;\n-    uart_config.rx_flow_ctrl_thresh = 122;\n-#endif\n-\n     uart_driver_install(_uart_num, RX_BUFFER_SIZE, TX_BUFFER_SIZE, 0, NULL, 0);\n }",
+      "filesTouched": [
+        "lib/hardware/ESP32UARTChannel.cpp"
+      ],
+      "linesAddedNowRemoved": 5,
+      "linesRemovedNowRestored": 0,
+      "summary": "revision 2 removed the 5 lines revision 1 had wrapped in #ifdef COCO_HS_UART, and added nothing in their place"
+    },
+    "deletedLineOrigins": [
+      {
+        "path": "lib/hardware/ESP32UARTChannel.cpp",
+        "line": 84,
+        "text": "#ifdef COCO_HS_UART",
+        "sha": "4b91c02f7d3e5a1c9b7d5f3a1c9e7b5d3f1a9c7e",
+        "author": "wdathing",
+        "date": "2026-09-17T17:44:15.973Z",
+        "subject": "Add UART flow control support (#1628)",
+        "pr": {
+          "number": 1628,
+          "title": "Adds support for flow control",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1628",
+          "author": "wdathing",
+          "mergedAt": "2026-09-17T17:44:15.973Z",
+          "body": "Adds support for flow control on the UART channel so the host can throttle the FujiNet during large transfers. Sets RTS/CTS on the UART and raises the rx threshold to 122 bytes."
+        }
+      },
+      {
+        "path": "lib/hardware/ESP32UARTChannel.cpp",
+        "line": 85,
+        "text": "    // hardware flow control is only wired on the CoCo high speed board",
+        "sha": "4b91c02f7d3e5a1c9b7d5f3a1c9e7b5d3f1a9c7e",
+        "author": "wdathing",
+        "date": "2026-09-17T17:44:15.973Z",
+        "subject": "Add UART flow control support (#1628)",
+        "pr": {
+          "number": 1628,
+          "title": "Adds support for flow control",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1628",
+          "author": "wdathing",
+          "mergedAt": "2026-09-17T17:44:15.973Z",
+          "body": "Adds support for flow control on the UART channel so the host can throttle the FujiNet during large transfers. Sets RTS/CTS on the UART and raises the rx threshold to 122 bytes."
+        }
+      },
+      {
+        "path": "lib/hardware/ESP32UARTChannel.cpp",
+        "line": 86,
+        "text": "    uart_set_hw_flow_ctrl(_uart_num, UART_HW_FLOWCTRL_CTS_RTS, 122);",
+        "sha": "4b91c02f7d3e5a1c9b7d5f3a1c9e7b5d3f1a9c7e",
+        "author": "wdathing",
+        "date": "2026-09-17T17:44:15.973Z",
+        "subject": "Add UART flow control support (#1628)",
+        "pr": {
+          "number": 1628,
+          "title": "Adds support for flow control",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1628",
+          "author": "wdathing",
+          "mergedAt": "2026-09-17T17:44:15.973Z",
+          "body": "Adds support for flow control on the UART channel so the host can throttle the FujiNet during large transfers. Sets RTS/CTS on the UART and raises the rx threshold to 122 bytes."
+        }
+      },
+      {
+        "path": "lib/hardware/ESP32UARTChannel.cpp",
+        "line": 87,
+        "text": "    uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;",
+        "sha": "4b91c02f7d3e5a1c9b7d5f3a1c9e7b5d3f1a9c7e",
+        "author": "wdathing",
+        "date": "2026-09-17T17:44:15.973Z",
+        "subject": "Add UART flow control support (#1628)",
+        "pr": {
+          "number": 1628,
+          "title": "Adds support for flow control",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1628",
+          "author": "wdathing",
+          "mergedAt": "2026-09-17T17:44:15.973Z",
+          "body": "Adds support for flow control on the UART channel so the host can throttle the FujiNet during large transfers. Sets RTS/CTS on the UART and raises the rx threshold to 122 bytes."
+        }
+      },
+      {
+        "path": "lib/hardware/ESP32UARTChannel.cpp",
+        "line": 88,
+        "text": "    uart_config.rx_flow_ctrl_thresh = 122;",
+        "sha": "4b91c02f7d3e5a1c9b7d5f3a1c9e7b5d3f1a9c7e",
+        "author": "wdathing",
+        "date": "2026-09-17T17:44:15.973Z",
+        "subject": "Add UART flow control support (#1628)",
+        "pr": {
+          "number": 1628,
+          "title": "Adds support for flow control",
+          "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1628",
+          "author": "wdathing",
+          "mergedAt": "2026-09-17T17:44:15.973Z",
+          "body": "Adds support for flow control on the UART channel so the host can throttle the FujiNet during large transfers. Sets RTS/CTS on the UART and raises the rx threshold to 122 bytes."
+        }
+      }
+    ],
+    "originPrs": [
+      {
+        "number": 1628,
+        "title": "Adds support for flow control",
+        "author": "wdathing",
+        "mergedAt": "2026-09-17T17:44:15.973Z",
+        "daysAgo": 3,
+        "linesDeletedFromIt": 5,
+        "authorInThread": false
+      }
+    ],
+    "thread": [
+      {
+        "kind": "commit",
+        "at": "2026-09-15T17:44:15.973Z",
+        "author": "mozzwald",
+        "association": "MEMBER",
+        "isMaintainer": true,
+        "body": "[rs232] guard RTS/CTS flow control behind COCO_HS_UART",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650/commits/a7c3e91d5b8f2a4c6e8d0b2f4a6c8e0d2b4f6a8c"
+      },
+      {
+        "kind": "review_comment",
+        "at": "2026-09-16T17:44:15.973Z",
+        "author": "FozzTexx",
+        "association": "OWNER",
+        "isMaintainer": true,
+        "body": "We do not put per platform ifdefs in this file. ESP32UARTChannel is shared by every bus; the platform differences belong in the pinmap or in the caller. Please find another way to express this.",
+        "path": "lib/hardware/ESP32UARTChannel.cpp",
+        "line": 84,
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650#discussion_r2211881"
+      },
+      {
+        "kind": "review",
+        "at": "2026-09-16T17:44:15.973Z",
+        "author": "FozzTexx",
+        "association": "OWNER",
+        "isMaintainer": true,
+        "state": "CHANGES_REQUESTED",
+        "body": "See the inline note about the ifdef.",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650#pullrequestreview-338201"
+      },
+      {
+        "kind": "commit",
+        "at": "2026-09-18T17:44:15.973Z",
+        "author": "mozzwald",
+        "association": "MEMBER",
+        "isMaintainer": true,
+        "body": "[rs232] drop the RTS/CTS block instead of guarding it",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650/commits/e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1"
+      },
+      {
+        "kind": "issue_comment",
+        "at": "2026-09-18T17:44:15.973Z",
+        "author": "mozzwald",
+        "association": "MEMBER",
+        "isMaintainer": true,
+        "body": "Fair enough, ifdef removed. To be clear about what this drops: the block never ran on CoCo boards anyway, since nothing defines COCO_HS_UART in any environment we build. And the call was redundant: uart_param_config already applies flow_ctrl from the config struct, so anyone who wants RTS/CTS can opt in through the config rather than having it forced here.",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650#issuecomment-4412887"
+      },
+      {
+        "kind": "review",
+        "at": "2026-09-19T17:44:15.973Z",
+        "author": "apc",
+        "association": "MEMBER",
+        "isMaintainer": true,
+        "state": "APPROVED",
+        "body": "Reads fine to me now.",
+        "url": "https://github.com/FujiNetWIFI/fujinet-firmware/pull/1650#pullrequestreview-338544"
+      }
+    ],
+    "maintainers": [
+      "FozzTexx",
+      "mozzwald",
+      "apc"
+    ],
+    "crossRefs": [
+      {
+        "symbol": "uart_set_hw_flow_ctrl",
+        "fromDeletedLine": "    uart_set_hw_flow_ctrl(_uart_num, UART_HW_FLOWCTRL_CTS_RTS, 122);",
+        "hits": [
+          {
+            "path": "lib/bus/drivewire/drivewire.cpp",
+            "line": 212,
+            "text": "        uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_DISABLE, 0);"
+          },
+          {
+            "path": "components_pc/fnUART/fnUART.cpp",
+            "line": 88,
+            "text": "    // host build has no hardware flow control"
+          }
+        ]
+      },
+      {
+        "symbol": "UART_HW_FLOWCTRL_CTS_RTS",
+        "fromDeletedLine": "    uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;",
+        "hits": [
+          {
+            "path": "lib/bus/drivewire/drivewire.cpp",
+            "line": 212,
+            "text": "        uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_DISABLE, 0);"
+          }
+        ]
+      },
+      {
+        "symbol": "COCO_HS_UART",
+        "fromDeletedLine": "#ifdef COCO_HS_UART",
+        "hits": []
+      }
+    ],
+    "drift": [
+      {
+        "kind": "title_mentions_absent_token",
+        "detail": "The title still says the flow control is limited to COCO_HS_UART, but that token does not appear anywhere in the current diff.",
+        "evidence": [
+          "COCO_HS_UART"
+        ]
+      },
+      {
+        "kind": "body_mentions_absent_token",
+        "detail": "The body describes gating the call behind a preprocessor test; neither token occurs in the current diff.",
+        "evidence": [
+          "#ifdef",
+          "COCO_HS_UART"
+        ]
+      },
+      {
+        "kind": "body_predates_push",
+        "detail": "The body has not changed since revision 1 was pushed 5 days ago, but the head moved 2 days ago.",
+        "evidence": [
+          "body unchanged since 2026-09-15T17:44:15.973Z",
+          "head pushed 2026-09-18T17:44:15.973Z"
+        ]
+      }
+    ],
+    "availability": {
+      "git": true,
+      "provenance": true,
+      "crossRefs": true,
+      "notes": []
+    }
+  }
+};
+
+// partialBrief and validationErrors are optional additions to DeepRun on the server
+// side; the widened type keeps this file valid against either version of the shared
+// contract, exactly as the web reads them defensively.
+export const FIXTURE_DEEP_RUNS: Record<
+  number,
+  Array<DeepRun & { partialBrief?: DeepBrief | null; validationErrors?: string[] }>
+> = {
+  "1632": [
+    {
+      "id": "deep_01JQ8D1XQP",
+      "prNumber": 1632,
+      "headSha": "3a7e5c9b1d4f6082a4c6e8f0b2d4f6081a3c5e7b",
+      "evaluationId": "ev_1632_3a7e5c9b",
+      "dossierBuiltAt": "2026-09-20T17:37:15.973Z",
+      "model": "anthropic/claude-haiku-4.5",
+      "mock": true,
+      "startedAt": "2026-09-20T17:43:15.973Z",
+      "status": "running",
+      "steps": [
+        {
+          "index": 0,
+          "at": "2026-09-20T17:43:15.973Z",
+          "kind": "tool",
+          "name": "pr_diff",
+          "args": {},
+          "resultPreview": "14 files, +696/-116; lib/media/atari/mediaTypeCAS.cpp is the largest hunk"
+        },
+        {
+          "index": 1,
+          "at": "2026-09-20T17:43:15.973Z",
+          "kind": "tool",
+          "name": "read_file",
+          "args": {
+            "path": "lib/device/sio/cassette.cpp",
+            "start_line": 100,
+            "end_line": 220
+          },
+          "resultPreview": "_rewind_pending is set in sio_rewind() and cleared in the FSK idle branch"
+        }
+      ],
+      "brief": null,
+      "usage": {
+        "promptTokens": 12880,
+        "completionTokens": 410,
+        "costUsd": 0.0151,
+        "calls": 2
+      },
+      "requestedBy": "tschak909"
+    }
+  ],
+  "1650": [
+    {
+      "id": "deep_01JQ8C4K7E",
+      "prNumber": 1650,
+      "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
+      "evaluationId": "ev_1650_9f3c1d2a",
+      "dossierBuiltAt": "2026-09-20T17:35:15.973Z",
+      "model": "anthropic/claude-haiku-4.5",
+      "mock": true,
+      "startedAt": "2026-09-20T17:35:15.973Z",
+      "finishedAt": "2026-09-20T17:36:15.973Z",
+      "status": "done",
+      "steps": [
+        {
+          "index": 0,
+          "at": "2026-09-20T17:35:15.973Z",
+          "kind": "tool",
+          "name": "revision_delta",
+          "args": {},
+          "resultPreview": "5 lines removed from lib/hardware/ESP32UARTChannel.cpp, 0 added"
+        },
+        {
+          "index": 1,
+          "at": "2026-09-20T17:35:22.973Z",
+          "kind": "tool",
+          "name": "git_blame",
+          "args": {
+            "path": "lib/hardware/ESP32UARTChannel.cpp",
+            "start_line": 84,
+            "end_line": 88
+          },
+          "resultPreview": "4b91c02 wdathing 2026-09-17 Add UART flow control support (#1628) [5 lines]"
+        },
+        {
+          "index": 2,
+          "at": "2026-09-20T17:35:29.973Z",
+          "kind": "tool",
+          "name": "fetch_pr",
+          "args": {
+            "number": 1628
+          },
+          "resultPreview": "#1628 \"Adds support for flow control\" by wdathing, merged 2026-09-17, 3 files"
+        },
+        {
+          "index": 3,
+          "at": "2026-09-20T17:35:36.973Z",
+          "kind": "tool",
+          "name": "grep",
+          "args": {
+            "pattern": "COCO_HS_UART",
+            "max_results": 20
+          },
+          "resultPreview": "no matches at refs/pr/1650; 0 hits in include/pinmap, 0 in platformio-ini-files"
+        },
+        {
+          "index": 4,
+          "at": "2026-09-20T17:35:43.973Z",
+          "kind": "tool",
+          "name": "read_file_at_base",
+          "args": {
+            "path": "lib/hardware/ESP32UARTChannel.cpp",
+            "start": 70,
+            "end": 150
+          },
+          "resultPreview": "74: uart_param_config(_uart_num, &uart_config); ... 141: uart_set_pin(_uart_num, _tx_pin, _rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);"
+        },
+        {
+          "index": 5,
+          "at": "2026-09-20T17:35:50.973Z",
+          "kind": "tool",
+          "name": "grep",
+          "args": {
+            "pattern": "uart_set_hw_flow_ctrl",
+            "max_results": 20
+          },
+          "resultPreview": "lib/bus/drivewire/drivewire.cpp:212 (DISABLE), components_pc/fnUART/fnUART.cpp:88 (comment)"
+        },
+        {
+          "index": 6,
+          "at": "2026-09-20T17:35:57.973Z",
+          "kind": "tool",
+          "name": "submit_brief",
+          "args": {
+            "recommendedAction": "ask_original_author"
+          },
+          "resultPreview": "brief accepted"
+        }
+      ],
+      "brief": {
+        "summary": "Revision 2 deletes the five flow control lines that #1628 added three days ago, rather than narrowing them as the maintainer asked. Nothing replaces them, and the title and body still describe the #ifdef approach from revision 1.",
+        "revisionChanges": [
+          "Revision 1 wrapped the RTS/CTS block in `#ifdef COCO_HS_UART` in the shared ESP32UARTChannel.",
+          "FozzTexx asked for no per platform ifdefs in that file and suggested the pinmap or the caller instead.",
+          "Revision 2 deleted the block outright. No pinmap, caller or config path took over the behaviour."
+        ],
+        "removedBehaviour": [
+          {
+            "lines": "lib/hardware/ESP32UARTChannel.cpp:84-88",
+            "originPr": 1628,
+            "purpose": "Adds support for flow control so the host can throttle the FujiNet during large transfers",
+            "status": "removed_without_replacement",
+            "citations": [
+              {
+                "kind": "code",
+                "ref": "lib/hardware/ESP32UARTChannel.cpp:84-88@2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c",
+                "note": "the block as revision 1 left it"
+              },
+              {
+                "kind": "pr",
+                "ref": "#1628",
+                "note": "added these lines three days ago"
+              },
+              {
+                "kind": "commit",
+                "ref": "4b91c02f7d3e5a1c9b7d5f3a1c9e7b5d3f1a9c7e",
+                "note": "Add UART flow control support (#1628)"
+              }
+            ]
+          }
+        ],
+        "claims": [
+          {
+            "claim": "The block never ran on CoCo boards anyway, since nothing defines COCO_HS_UART in any environment we build.",
+            "by": "mozzwald",
+            "verdict": "holds",
+            "evidence": "COCO_HS_UART does not appear in any pinmap header, platformio environment or build flag at the base revision. git grep returns no definition, so the guarded block was never compiled in.",
+            "citations": [
+              {
+                "kind": "code",
+                "ref": "include/pinmap/coco-devkitc.h:1-40@7f1e3d5b7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+                "note": "no COCO_HS_UART"
+              },
+              {
+                "kind": "code",
+                "ref": "platformio-ini-files/platformio.coco.ini:1-60@7f1e3d5b7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+                "note": "no build flag"
+              }
+            ]
+          },
+          {
+            "claim": "The call was redundant because uart_param_config already applies flow_ctrl from the config struct.",
+            "by": "mozzwald",
+            "verdict": "partially_holds",
+            "evidence": "uart_param_config does apply flow_ctrl, so setting it in the struct is enough for the driver. But uart_set_pin at line 141 still passes UART_PIN_NO_CHANGE for both RTS and CTS, so no pins are assigned and opting in through config alone leaves hardware flow control inert.",
+            "citations": [
+              {
+                "kind": "code",
+                "ref": "lib/hardware/ESP32UARTChannel.cpp:138-144@7f1e3d5b7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+                "note": "uart_set_pin with UART_PIN_NO_CHANGE"
+              },
+              {
+                "kind": "code",
+                "ref": "lib/hardware/ESP32UARTChannel.cpp:74-82@7f1e3d5b7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+                "note": "uart_param_config call site"
+              }
+            ]
+          }
+        ],
+        "openQuestions": [
+          {
+            "question": "Does the CoCo high speed board actually have RTS and CTS wired, and to which pins? #1628 assumed it did.",
+            "toWhom": "wdathing (author of #1628, not in this thread)"
+          },
+          {
+            "question": "Should the pins be plumbed in this pull request, or tracked as a follow up issue against #1628?",
+            "toWhom": "FozzTexx"
+          },
+          {
+            "question": "Can the title and body be rewritten to describe the deletion rather than the ifdef?",
+            "toWhom": "mozzwald (author)"
+          }
+        ],
+        "recommendedAction": "ask_original_author",
+        "rationale": [
+          "The deleted lines are three days old and came from a merged pull request whose author is not in this thread, so the cheapest way to avoid losing intended behaviour is to ask them.",
+          "The maintainer objected to the ifdef, not to flow control, so deleting the behaviour goes further than the review asked for.",
+          "One of the author's two justifications does not survive checking, which changes what the right fix is.",
+          "The description still describes revision 1, so the pull request cannot be merged as documented whatever is decided about the code."
+        ],
+        "draftReply": "Thanks for dropping the ifdef, that was the right call for this file.\n\nBefore this goes in, two things:\n\n1. These five lines came from #1628 (@wdathing, merged three days ago), whose stated purpose was adding flow control. Deleting them here removes that behaviour rather than relocating it. @wdathing, does the CoCo high speed board have RTS and CTS wired, and to which pins?\n2. On the redundancy argument: `uart_param_config` does apply `flow_ctrl` from the struct, but `uart_set_pin` still passes `UART_PIN_NO_CHANGE` for RTS and CTS, so opting in through config alone will not do anything until the pins are assigned. Either plumb them here or open a follow up issue so it is not lost.\n\nCould you also update the title and body? Both still describe the `#ifdef COCO_HS_UART` approach from the first revision.",
+        "confidence": "medium",
+        "caveats": [
+          "The pinmap was read at the base revision; a board header added in this pull request could change the answer.",
+          "No hardware was available, so the wiring question is answered from headers only.",
+          "The thread was read as of the dossier build time; later comments are not included."
+        ]
+      },
+      "usage": {
+        "promptTokens": 48211,
+        "completionTokens": 3402,
+        "costUsd": 0.0654,
+        "calls": 7
+      },
+      "requestedBy": "FozzTexx"
+    },
+    {
+      "id": "deep_01JQ8BF3QT",
+      "prNumber": 1650,
+      "headSha": "9f3c1d2a4b6e8f0a1c3d5e7f9a1b3c5d7e9f0a1b",
+      "evaluationId": "ev_1650_9f3c1d2a",
+      "dossierBuiltAt": "2026-09-20T17:03:15.973Z",
+      "model": "anthropic/claude-sonnet-4.5",
+      "mock": false,
+      "startedAt": "2026-09-20T17:03:15.973Z",
+      "finishedAt": "2026-09-20T17:06:15.973Z",
+      "status": "failed",
+      "steps": [
+        {
+          "index": 0,
+          "at": "2026-09-20T17:03:15.973Z",
+          "kind": "tool",
+          "name": "revision_delta",
+          "args": {},
+          "resultPreview": "5 lines removed from lib/hardware/ESP32UARTChannel.cpp, 0 added"
+        },
+        {
+          "index": 1,
+          "at": "2026-09-20T17:04:15.973Z",
+          "kind": "tool",
+          "name": "git_blame",
+          "args": {
+            "path": "lib/hardware/ESP32UARTChannel.cpp",
+            "start_line": 84,
+            "end_line": 88
+          },
+          "resultPreview": "4b91c02 wdathing 2026-09-17 Add UART flow control support (#1628) [5 lines]"
+        },
+        {
+          "index": 2,
+          "at": "2026-09-20T17:05:15.973Z",
+          "kind": "tool",
+          "name": "fetch_pr",
+          "args": {
+            "number": 1628
+          },
+          "resultPreview": "#1628 \"Adds support for flow control\" by wdathing, merged 2026-09-17, 3 files"
+        },
+        {
+          "index": 3,
+          "at": "2026-09-20T17:06:15.973Z",
+          "kind": "tool",
+          "name": "grep",
+          "args": {
+            "pattern": "COCO_HS_UART",
+            "max_results": 20
+          },
+          "resultPreview": "no matches at refs/pr/1650; 0 hits in include/pinmap, 0 in platformio-ini-files"
+        },
+        {
+          "index": 4,
+          "at": "2026-09-20T17:07:15.973Z",
+          "kind": "tool",
+          "name": "read_file_at_base",
+          "args": {
+            "path": "lib/hardware/ESP32UARTChannel.cpp",
+            "start": 70,
+            "end": 150
+          },
+          "resultPreview": "74: uart_param_config(_uart_num, &uart_config); ... 141: uart_set_pin(_uart_num, _tx_pin, _rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);"
+        },
+        {
+          "index": 5,
+          "at": "2026-09-20T17:08:15.973Z",
+          "kind": "tool",
+          "name": "grep",
+          "args": {
+            "pattern": "uart_set_hw_flow_ctrl",
+            "max_results": 20
+          },
+          "resultPreview": "lib/bus/drivewire/drivewire.cpp:212 (DISABLE), components_pc/fnUART/fnUART.cpp:88 (comment)"
+        }
+      ],
+      "brief": null,
+      "partialBrief": {
+        "summary": "Revision 2 deletes the five flow control lines that #1628 added three days ago. Nothing replaces them, and the description still describes revision 1.",
+        "revisionChanges": [
+          "Revision 1 wrapped the RTS/CTS block in `#ifdef COCO_HS_UART` in the shared ESP32UARTChannel.",
+          "FozzTexx asked for no per platform ifdefs in that file and suggested the pinmap or the caller instead.",
+          "Revision 2 deleted the block outright. No pinmap, caller or config path took over the behaviour."
+        ],
+        "removedBehaviour": [
+          {
+            "lines": "lib/hardware/ESP32UARTChannel.cpp:84-88",
+            "originPr": 1628,
+            "purpose": "Adds support for flow control so the host can throttle the FujiNet during large transfers",
+            "status": "removed_without_replacement",
+            "citations": [
+              {
+                "kind": "code",
+                "ref": "lib/hardware/ESP32UARTChannel.cpp:84-88@2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c",
+                "note": "the block as revision 1 left it"
+              },
+              {
+                "kind": "pr",
+                "ref": "#1628",
+                "note": "added these lines three days ago"
+              },
+              {
+                "kind": "commit",
+                "ref": "4b91c02f7d3e5a1c9b7d5f3a1c9e7b5d3f1a9c7e",
+                "note": "Add UART flow control support (#1628)"
+              }
+            ]
+          }
+        ],
+        "claims": [
+          {
+            "claim": "The block never ran on CoCo boards anyway, since nothing defines COCO_HS_UART in any environment we build.",
+            "by": "mozzwald",
+            "verdict": "holds",
+            "evidence": "COCO_HS_UART does not appear in any pinmap header, platformio environment or build flag at the base revision. git grep returns no definition, so the guarded block was never compiled in.",
+            "citations": []
+          },
+          {
+            "claim": "The call was redundant because uart_param_config already applies flow_ctrl from the config struct.",
+            "by": "mozzwald",
+            "verdict": "partially_holds",
+            "evidence": "uart_param_config does apply flow_ctrl, so setting it in the struct is enough for the driver. But uart_set_pin at line 141 still passes UART_PIN_NO_CHANGE for both RTS and CTS, so no pins are assigned and opting in through config alone leaves hardware flow control inert.",
+            "citations": [
+              {
+                "kind": "code",
+                "ref": "lib/hardware/ESP32UARTChannel.cpp:138-144@7f1e3d5b7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+                "note": "uart_set_pin with UART_PIN_NO_CHANGE"
+              },
+              {
+                "kind": "code",
+                "ref": "lib/hardware/ESP32UARTChannel.cpp:74-82@7f1e3d5b7a9c1e3f5b7d9f1a3c5e7b9d1f3a5c7e",
+                "note": "uart_param_config call site"
+              }
+            ]
+          }
+        ],
+        "openQuestions": [
+          {
+            "question": "Does the CoCo high speed board actually have RTS and CTS wired, and to which pins? #1628 assumed it did.",
+            "toWhom": "wdathing (author of #1628, not in this thread)"
+          },
+          {
+            "question": "Should the pins be plumbed in this pull request, or tracked as a follow up issue against #1628?",
+            "toWhom": "FozzTexx"
+          }
+        ],
+        "recommendedAction": "ask_original_author",
+        "rationale": [
+          "The deleted lines are three days old and came from a merged pull request whose author is not in this thread, so the cheapest way to avoid losing intended behaviour is to ask them.",
+          "The maintainer objected to the ifdef, not to flow control, so deleting the behaviour goes further than the review asked for.",
+          "One of the author's two justifications does not survive checking, which changes what the right fix is.",
+          "The description still describes revision 1, so the pull request cannot be merged as documented whatever is decided about the code."
+        ],
+        "draftReply": "Thanks for dropping the ifdef, that was the right call for this file.\n\nBefore this goes in, two things:\n\n1. These five lines came from #1628 (@wdathing, merged three days ago), whose stated purpose was adding flow control. Deleting them here removes that behaviour rather than relocating it. @wdathing, does the CoCo high speed board have RTS and CTS wired, and to which pins?\n2. On the redundancy argument: `uart_param_config` does apply `flow_ctrl` from the struct, but `uart_set_pin` still passes `UART_PIN_NO_CHANGE` for RTS and CTS, so opting in through config alone will not do anything until the pins are assigned. Either plumb them here or open a follow up issue so it is not lost.\n\nCould you also update the title and body? Both still describe the `#ifdef COCO_HS_UART` approach from the first revision.",
+        "confidence": "medium",
+        "caveats": []
+      },
+      "validationErrors": [
+        "claims[0].citations: expected at least one citation, got an empty array",
+        "recommendedAction: \"ask_1628_author\" is not one of the nine allowed actions",
+        "caveats: expected an array of strings, got null"
+      ],
+      "usage": {
+        "promptTokens": 96204,
+        "completionTokens": 5120,
+        "costUsd": 0.3654,
+        "calls": 39
+      },
+      "error": "submit_brief failed schema validation twice; the run was ended and the last attempt kept.",
+      "requestedBy": "FozzTexx"
+    },
+    {
+      "id": "deep_01JQ89ZB2M",
+      "prNumber": 1650,
+      "headSha": "2c4e6a8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a0c",
+      "evaluationId": "ev_1650_2c4e6a8b",
+      "dossierBuiltAt": "2026-09-18T17:44:15.973Z",
+      "model": "openai/gpt-5-mini",
+      "mock": true,
+      "startedAt": "2026-09-18T17:44:15.973Z",
+      "finishedAt": "2026-09-18T17:44:15.973Z",
+      "status": "aborted",
+      "steps": [
+        {
+          "index": 0,
+          "at": "2026-09-18T17:44:15.973Z",
+          "kind": "tool",
+          "name": "revision_delta",
+          "args": {},
+          "resultPreview": "5 lines removed from lib/hardware/ESP32UARTChannel.cpp, 0 added"
+        },
+        {
+          "index": 1,
+          "at": "2026-09-18T17:44:15.973Z",
+          "kind": "tool",
+          "name": "git_blame",
+          "args": {
+            "path": "lib/hardware/ESP32UARTChannel.cpp",
+            "start_line": 84,
+            "end_line": 88
+          },
+          "resultPreview": "4b91c02 wdathing 2026-09-17 Add UART flow control support (#1628) [5 lines]"
+        },
+        {
+          "index": 2,
+          "at": "2026-09-18T17:44:15.973Z",
+          "kind": "tool",
+          "name": "fetch_pr",
+          "args": {
+            "number": 1628
+          },
+          "resultPreview": "#1628 \"Adds support for flow control\" by wdathing, merged 2026-09-17, 3 files"
+        },
+        {
+          "index": 3,
+          "at": "2026-09-18T17:44:15.973Z",
+          "kind": "tool",
+          "name": "grep",
+          "args": {
+            "pattern": "COCO_HS_UART",
+            "max_results": 20
+          },
+          "resultPreview": "no matches at refs/pr/1650; 0 hits in include/pinmap, 0 in platformio-ini-files"
+        }
+      ],
+      "brief": null,
+      "usage": {
+        "promptTokens": 21044,
+        "completionTokens": 980,
+        "costUsd": 0.0121,
+        "calls": 4
+      },
+      "error": "Step cap of 30 reached before submit_brief; partial run kept for reference.",
+      "requestedBy": "mozzwald"
+    }
+  ]
+};
+
+export const FIXTURE_DEEP_MODELS: {
+  models: DeepModel[];
+  default: string | null;
+  keyPresent: boolean;
+} = {
+  "models": [
+    {
+      "id": "anthropic/claude-haiku-4.5",
+      "name": "Claude Haiku 4.5",
+      "contextLength": 200000,
+      "promptUsdPerM": 1,
+      "completionUsdPerM": 5
+    },
+    {
+      "id": "anthropic/claude-sonnet-4.5",
+      "name": "Claude Sonnet 4.5",
+      "contextLength": 200000,
+      "promptUsdPerM": 3,
+      "completionUsdPerM": 15
+    },
+    {
+      "id": "openai/gpt-5-mini",
+      "name": "GPT-5 mini",
+      "contextLength": 400000,
+      "promptUsdPerM": 0.25,
+      "completionUsdPerM": 2
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash",
+      "contextLength": 1048576,
+      "promptUsdPerM": 0.3,
+      "completionUsdPerM": 2.5
+    }
+  ],
+  "default": "anthropic/claude-haiku-4.5",
+  "keyPresent": false
+};
+
+export const FIXTURE_DEEP_SPEND: { todayUsd: number; capUsd: number; runsToday: number } = {
+  "todayUsd": 0.0926,
+  "capUsd": 5,
+  "runsToday": 3
 };

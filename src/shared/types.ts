@@ -10,7 +10,7 @@ export interface CheckRun { name: string; status: string; conclusion: string | n
 
 export interface PrSnapshot {
   number: number; title: string; body: string; author: string; authorAssociation: string;
-  url: string; draft: boolean; state: "open"; base: string; headRef: string; headSha: string;
+  url: string; draft: boolean; state: "open" | "closed" | "merged"; base: string; headRef: string; headSha: string;
   createdAt: string; updatedAt: string; labels: string[];
   mergeable: boolean | null; mergeableState: string;
   additions: number; deletions: number; changedFiles: number;
@@ -93,6 +93,10 @@ export interface DeepRun {
   model: string; mock: boolean; startedAt: string; finishedAt?: string; status: "running" | "done" | "failed" | "aborted";
   steps: DeepStep[]; brief: DeepBrief | null; usage: { promptTokens: number; completionTokens: number; costUsd: number; calls: number };
   error?: string; requestedBy: string;
+  /** The last brief the model attempted when validation finally failed, so the work is never lost. */
+  partialBrief?: DeepBrief | null;
+  /** Why each submit_brief attempt was rejected, newest last. */
+  validationErrors?: string[];
 }
 export interface DeepModel { id: string; name: string; contextLength: number; promptUsdPerM: number; completionUsdPerM: number; }
 export type DeepEvent =

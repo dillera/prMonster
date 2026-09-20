@@ -240,6 +240,69 @@ live queue: a small PR is one PR call plus one chunk call, under a tenth of a
 cent; the 78-file Astrocade PR across 12 chunks is about $0.0065; a forced
 scan of all ten open PRs is about $0.02. The header shows cumulative spend.
 
+## Deep analysis
+
+Beyond the score, a maintainer usually wants to know *what to open and what to
+say*. Two extra layers answer that, and a **dossier** is built for every PR
+automatically:
+
+- **Dossier** (deterministic, no model). Revisions and what the latest push
+  changed; the provenance of every deleted line, blamed at the base commit and
+  traced to the pull request that added it; the review thread with maintainer
+  badges; cross-references for the symbols in the deleted lines; and
+  description drift — tokens the title or body names that the current diff does
+  not contain. `GET /api/prs/:n/dossier`. It needs a local clone, kept at
+  `data/repo/` (blobless, no checkout, cloned on first use). Without git, the
+  provenance and cross-reference sections are marked unavailable and everything
+  else still works.
+- **Deep analysis** (a generative model, read-only, **only when a reviewer
+  clicks Run**). The model gets the dossier and a set of read-only tools over
+  that clone — `read_file`, `grep`, `git_blame`, `git_log`, `git_show`,
+  `pr_diff`, `revision_delta`, `fetch_pr`, `list_dir` — verifies the factual
+  claims people made in the thread, and returns a structured brief: what the
+  revision changed, what behaviour was removed and where it came from, a verdict
+  on each claim with citations, open questions with who to ask, one recommended
+  action, and a draft reply.
+
+Nothing about writes changes. The draft reply can only be loaded into the
+existing proposal flow (`GET /api/prs/:n/proposal?fromDeep=<runId>`), where it
+still needs `ALLOW_GITHUB_WRITES=1`, a typed `CONFIRM`, a name, and a head SHA
+that still matches GitHub. **A deep run starts only from
+`POST /api/prs/:n/deep` with a `requestedBy` name** — never from a scan, an
+evaluation, or an SSE reconnect, and there is a test that asserts it. Every
+brief is labelled with the model that produced it and its cost, and says to
+check the citations.
+
+### Environment
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `OPENROUTER_API_KEY` | — | Absent: deep analysis runs a scripted mock, labelled as such in the UI. Present: real runs through OpenRouter. |
+| `OPENROUTER_MODEL` | `anthropic/claude-haiku-4.5` | Default model; the UI's picker lists every tool-capable model from OpenRouter. |
+| `DEEP_MAX_STEPS` | `30` | Tool-calling rounds before the run aborts with a partial brief. |
+| `DEEP_MAX_COST_USD` | `0.50` | Per-run ceiling. The loop stops as soon as the reported cost passes it. |
+| `DEEP_DAILY_CAP_USD` | `5` | New runs are refused (402) once the day's runs total this much. |
+| `DEEP_DOSSIER` | on | Set to `0` to skip dossier building during evaluation. |
+
+Cost is read from OpenRouter's own `usage.cost`, summed per run and per day;
+`GET /api/deep/spend` reports today against the cap, and the run panel shows it
+before you start. A run is typically a few cents with the default model. Mock
+runs cost nothing.
+
+### Caveats specific to deep analysis
+
+- **The model can be wrong.** It is instructed to cite `path:line@sha`, a PR
+  number, or a comment URL for every claim about code, and to say "unverified"
+  when it cannot. Read the citations, not the prose.
+- **It is read-only by construction.** Tools go through one module that
+  validates every path and revision before any git call, runs git with fixed
+  argv and never a shell, and caps every output. There is no write tool, and no
+  network access beyond OpenRouter and the GitHub reads the harness already
+  makes.
+- **The first dossier is slow.** It clones the repository and, the first time
+  anything greps, materialises one tree so `git grep` does not fetch blobs one
+  at a time. After that it is cached per head SHA.
+
 ## Caveats
 
 - **Jev reads literally.** The question wording in `src/server/jev.ts` was

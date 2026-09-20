@@ -19,6 +19,12 @@ import type {
   ActionKind,
   ActionRecord,
   Decision,
+  DeepBrief,
+  DeepEvent,
+  DeepModel,
+  DeepRun,
+  DeepStep,
+  Dossier,
   Evaluation,
   Policy,
   PrListItem,
@@ -28,6 +34,9 @@ import type {
   ScanJob,
   TriageState,
 } from "../../shared/types";
+
+/** Everything that arrives on /api/events: scan progress and deep analysis. */
+export type HarnessEvent = ScanEvent | DeepEvent;
 
 /** True when the app runs against src/web/fixtures.ts instead of the Hono server. */
 export const FIXTURES_MODE = import.meta.env.VITE_FIXTURES === "1";
@@ -55,6 +64,25 @@ export interface StatsSummary {
   tokensUsed: number;
   estCostUsd: number;
   lastScanAt: string | null;
+}
+
+export interface DeepModelsResponse {
+  models: DeepModel[];
+  /** Model id preselected when the reviewer has no stored preference. */
+  default: string | null;
+  /** False when OPENROUTER_API_KEY is absent: runs are mock and labelled. */
+  keyPresent: boolean;
+}
+
+export interface DeepSpend {
+  todayUsd: number;
+  capUsd: number;
+  runsToday: number;
+}
+
+export interface DeepRuns {
+  latest: DeepRun | null;
+  history: DeepRun[];
 }
 
 export interface PrDetail {
@@ -157,6 +185,11 @@ type FixtureModule = typeof import("../fixtures");
 
 interface FixtureDb {
   prs: PrListItem[];
+  closedPrs: PrListItem[];
+  dossiers: Record<number, Dossier>;
+  deepRuns: Record<number, DeepRun[]>;
+  deepModels: DeepModelsResponse;
+  deepSpend: DeepSpend;
   policy: Policy;
   proposals: Record<number, Proposal>;
   actions: ActionRecord[];
@@ -173,18 +206,31 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** Open PRs first, then the closed ones that still have stored history. */
+function findFixtureItem(store: FixtureDb, n: number): PrListItem | undefined {
+  return (
+    store.prs.find((p) => p.snapshot.number === n) ??
+    store.closedPrs.find((p) => p.snapshot.number === n)
+  );
+}
+
 async function db(): Promise<FixtureDb> {
   if (fixtureDb) return fixtureDb;
   if (!fixtureLoad) {
     fixtureLoad = import("../fixtures").then((mod: FixtureModule) => {
       fixtureDb = {
         prs: clone(mod.FIXTURE_PRS),
+        closedPrs: clone(mod.FIXTURE_CLOSED_PRS),
         policy: clone(mod.FIXTURE_POLICY),
         proposals: clone(mod.FIXTURE_PROPOSALS),
         actions: clone(mod.FIXTURE_ACTIONS),
         stats: clone(mod.FIXTURE_STATS),
         health: clone(mod.FIXTURE_HEALTH),
         history: clone(mod.FIXTURE_EVALUATION_HISTORY),
+        dossiers: clone(mod.FIXTURE_DOSSIERS),
+        deepRuns: clone(mod.FIXTURE_DEEP_RUNS),
+        deepModels: clone(mod.FIXTURE_DEEP_MODELS),
+        deepSpend: clone(mod.FIXTURE_DEEP_SPEND),
         jobs: { [mod.FIXTURE_SCAN_JOB.id]: clone(mod.FIXTURE_SCAN_JOB) },
       };
       return fixtureDb;
@@ -205,10 +251,10 @@ async function latency(min = 90, max = 260): Promise<void> {
 }
 
 // ---------------------------------------------------------------- event bus
-type EventHandler = (event: ScanEvent) => void;
+type EventHandler = (event: HarnessEvent) => void;
 const fixtureSubscribers = new Set<EventHandler>();
 
-function emitFixtureEvent(event: ScanEvent): void {
+function emitFixtureEvent(event: HarnessEvent): void {
   for (const handler of [...fixtureSubscribers]) handler(event);
 }
 
@@ -218,7 +264,7 @@ function emitFixtureEvent(event: ScanEvent): void {
  * `type` field) and named SSE events are accepted, since either is a valid reading
  * of DESIGN.md 5.
  */
-export function subscribeScanEvents(
+export function subscribeEvents(
   handler: EventHandler,
   onOpen?: () => void,
   onError?: () => void,
@@ -236,7 +282,7 @@ export function subscribeScanEvents(
   // double count. `seen` only guards a server that sends the frame twice.
   const dispatch = (raw: string): void => {
     try {
-      const event = JSON.parse(raw) as ScanEvent;
+      const event = JSON.parse(raw) as HarnessEvent;
       if (!event || typeof event !== "object" || typeof event.type !== "string") return;
       if (seen.has(raw)) return;
       seen.add(raw);
@@ -248,7 +294,18 @@ export function subscribeScanEvents(
   };
 
   source.onmessage = (ev: MessageEvent<string>) => dispatch(ev.data);
-  const named: ScanEvent["type"][] = ["scan:start", "pr:start", "pr:stage", "pr:done", "pr:error", "scan:done"];
+  const named: HarnessEvent["type"][] = [
+    "scan:start",
+    "pr:start",
+    "pr:stage",
+    "pr:done",
+    "pr:error",
+    "scan:done",
+    "deep:start",
+    "deep:step",
+    "deep:done",
+    "deep:error",
+  ];
   for (const name of named) {
     source.addEventListener(name, (ev) => dispatch((ev as MessageEvent<string>).data));
   }
@@ -277,12 +334,53 @@ export async function listPrs(): Promise<PrListItem[]> {
   return request<PrListItem[]>("/api/prs");
 }
 
+/**
+ * Pull requests that are closed or merged but still have stored history.
+ *
+ * The route is additive, and older servers answer 400 or 404 for it because
+ * /api/prs/:n matches first. That is treated as "no closed list" rather than an
+ * error, so the board simply does not show the section.
+ */
+export async function listClosedPrs(): Promise<PrListItem[]> {
+  if (FIXTURES_MODE) {
+    const store = await db();
+    await latency(180, 420);
+    return clone(store.closedPrs);
+  }
+  const res = await rawRequest("/api/prs/closed");
+  if (res.ok) return normaliseClosedPrs(res.parsed);
+  if (res.status === 400 || res.status === 404) return [];
+  throw errorFrom(res, "/api/prs/closed");
+}
+
+/**
+ * The closed list is specified as `PrListItem[]`, but the live server currently
+ * wraps it as `{ closedWithHistory: [...] }`. Both are accepted, and anything else
+ * reads as an empty list: a secondary section must never be able to blank the board.
+ */
+export function normaliseClosedPrs(raw: unknown): PrListItem[] {
+  const candidate = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+      ? ((raw as Record<string, unknown>).closedWithHistory ??
+        (raw as Record<string, unknown>).items ??
+        (raw as Record<string, unknown>).prs)
+      : null;
+  if (!Array.isArray(candidate)) return [];
+  return candidate.filter(
+    (item): item is PrListItem =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as PrListItem).snapshot?.number === "number",
+  );
+}
+
 export async function getPr(n: number): Promise<PrDetail> {
   if (FIXTURES_MODE) {
     const store = await db();
     await latency();
-    const item = store.prs.find((p) => p.snapshot.number === n);
-    if (!item) throw new ApiError(404, `PR #${n} is not in the open list`);
+    const item = findFixtureItem(store, n);
+    if (!item) throw new ApiError(404, `PR #${n} is not known to the harness`);
     return clone({ snapshot: item.snapshot, evaluation: item.evaluation });
   }
   return request<PrDetail>(`/api/prs/${n}`);
@@ -358,15 +456,106 @@ export async function getStats(): Promise<StatsSummary> {
   return request<StatsSummary>("/api/stats");
 }
 
-export async function getProposal(n: number): Promise<Proposal> {
+/**
+ * The drafted action for a PR. With `fromDeep` the server builds the draft from that
+ * deep run's reply instead of the template (DESIGN-deep.md, proposal route).
+ */
+export async function getProposal(n: number, fromDeep?: string): Promise<Proposal> {
+  if (FIXTURES_MODE) return fixtureProposal(n, fromDeep);
+  const query = fromDeep ? `?fromDeep=${encodeURIComponent(fromDeep)}` : "";
+  return request<Proposal>(`/api/prs/${n}/proposal${query}`);
+}
+
+// ---------------------------------------------------------------- deep analysis
+/** The dossier for a PR: deterministic, built from git and the GitHub thread. */
+export async function getDossier(n: number, refresh = false): Promise<Dossier> {
   if (FIXTURES_MODE) {
     const store = await db();
-    await latency(160, 380);
-    const proposal = store.proposals[n];
-    if (!proposal) throw new ApiError(404, `PR #${n} has no evaluation to draft an action from`);
-    return clone(proposal);
+    await latency(220, 520);
+    const dossier = store.dossiers[n];
+    if (!dossier) {
+      throw new ApiError(503, `No dossier was built for PR #${n} in fixtures mode.`);
+    }
+    return clone(dossier);
   }
-  return request<Proposal>(`/api/prs/${n}/proposal`);
+  return request<Dossier>(`/api/prs/${n}/dossier${refresh ? "?refresh=1" : ""}`);
+}
+
+export async function getDeepRuns(n: number): Promise<DeepRuns> {
+  if (FIXTURES_MODE) {
+    const store = await db();
+    await latency(120, 300);
+    const runs = store.deepRuns[n] ?? [];
+    advanceFixtureRun(n);
+    const [latest = null, ...history] = runs;
+    return clone({ latest, history });
+  }
+  return request<DeepRuns>(`/api/prs/${n}/deep`);
+}
+
+export async function getDeepModels(): Promise<DeepModelsResponse> {
+  if (FIXTURES_MODE) {
+    const store = await db();
+    await latency();
+    return clone(store.deepModels);
+  }
+  // DESIGN-deep.md describes this route as an array "plus { default, keyPresent }",
+  // which can be read two ways, so both shapes are accepted.
+  const raw = await request<unknown>("/api/deep/models");
+  return normaliseModels(raw);
+}
+
+export function normaliseModels(raw: unknown): DeepModelsResponse {
+  const empty: DeepModelsResponse = { models: [], default: null, keyPresent: false };
+  if (Array.isArray(raw)) return { ...empty, models: raw as DeepModel[] };
+  if (!raw || typeof raw !== "object") return empty;
+  const obj = raw as Record<string, unknown>;
+  const list = Array.isArray(obj.models) ? obj.models : Array.isArray(obj.data) ? obj.data : [];
+  return {
+    models: list as DeepModel[],
+    default: typeof obj.default === "string" ? obj.default : null,
+    keyPresent: obj.keyPresent === true,
+  };
+}
+
+export async function getDeepSpend(): Promise<DeepSpend> {
+  if (FIXTURES_MODE) {
+    const store = await db();
+    await latency();
+    return clone(store.deepSpend);
+  }
+  return request<DeepSpend>("/api/deep/spend");
+}
+
+/**
+ * Start a deep run. This is the only way a run ever starts: a reviewer clicked, and
+ * gave a name (DESIGN-deep.md non-negotiables).
+ */
+export async function startDeepRun(
+  n: number,
+  options: { model?: string; requestedBy: string },
+): Promise<DeepRun> {
+  if (FIXTURES_MODE) return startFixtureDeepRun(n, options);
+  return request<DeepRun>(`/api/prs/${n}/deep`, { method: "POST", body: JSON.stringify(options) });
+}
+
+/**
+ * Ask the server to abort the running analysis.
+ *
+ * DESIGN-deep.md describes a stop button but its route table has no stop route, so
+ * this posts to the obvious path and reports clearly when the server has none.
+ */
+export async function stopDeepRun(n: number, runId: string): Promise<DeepRun | null> {
+  if (FIXTURES_MODE) return stopFixtureDeepRun(n, runId);
+  const res = await rawRequest(`/api/prs/${n}/deep/stop`, {
+    method: "POST",
+    body: JSON.stringify({ runId }),
+  });
+  if (res.ok) return (res.parsed as DeepRun) ?? null;
+  if (res.status === 404 || res.status === 405) {
+    throw new ApiError(res.status, "This server has no stop route for deep runs; the run will stop at its own step or cost cap.");
+  }
+  throw errorFrom(res, `/api/prs/${n}/deep/stop`);
 }
 
 /**
@@ -401,8 +590,8 @@ export async function setTriage(n: number, req: TriageRequest): Promise<TriageSt
   if (FIXTURES_MODE) {
     const store = await db();
     await latency(140, 300);
-    const item = store.prs.find((p) => p.snapshot.number === n);
-    if (!item) throw new ApiError(404, `PR #${n} is not in the open list`);
+    const item = findFixtureItem(store, n);
+    if (!item) throw new ApiError(404, `PR #${n} is not known to the harness`);
     const state: TriageState = {
       prNumber: n,
       status: req.status,
@@ -505,6 +694,209 @@ function fixtureAction(n: number, req: ActionRequest): Promise<ActionRecord> {
     store.actions = [record, ...store.actions];
     return clone(record);
   })();
+}
+
+// ---------------------------------------------------------------- fixture deep runs
+/** The tool sequence a mock run plays, mirroring the tools in DESIGN-deep.md. */
+function fixtureToolScript(n: number): Array<{ name: string; args: unknown; resultPreview: string }> {
+  return FIXTURE_TOOL_SCRIPT.map((step) => ({
+    ...step,
+    resultPreview: step.resultPreview.replace("<pr>", `refs/pr/${n}`),
+  }));
+}
+
+const FIXTURE_TOOL_SCRIPT: Array<{ name: string; args: unknown; resultPreview: string }> = [
+  {
+    name: "revision_delta",
+    args: {},
+    resultPreview: "diff --git a/lib/hardware/ESP32UARTChannel.cpp ... 5 lines removed, 0 added",
+  },
+  {
+    name: "git_blame",
+    args: { path: "lib/hardware/ESP32UARTChannel.cpp", start_line: 84, end_line: 88 },
+    resultPreview: "4b91c02 wdathing 2026-09-14 Add UART flow control support (#1628)",
+  },
+  {
+    name: "fetch_pr",
+    args: { number: 1628 },
+    resultPreview: '#1628 "Adds support for flow control" by wdathing, merged 2026-09-14',
+  },
+  {
+    name: "read_file_at_base",
+    args: { path: "lib/hardware/ESP32UARTChannel.cpp", start: 60, end: 120 },
+    resultPreview: "uart_param_config(_uart_num, &uart_config); ... uart_set_pin(_uart_num, tx, rx, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);",
+  },
+  {
+    name: "grep",
+    args: { pattern: "UART_PIN_NO_CHANGE", path_glob: "lib/**" },
+    resultPreview: "lib/hardware/ESP32UARTChannel.cpp:141 ... 3 hits",
+  },
+  {
+    name: "grep",
+    args: { pattern: "COCO_HS_UART", path_glob: "**" },
+    resultPreview: "0 hits at <pr>",
+  },
+  {
+    name: "submit_brief",
+    args: { recommendedAction: "ask_original_author" },
+    resultBrief: true,
+    resultPreview: "brief accepted",
+  } as unknown as { name: string; args: unknown; resultPreview: string },
+];
+
+const fixtureRunTimers = new Map<string, number[]>();
+
+function fixtureStepAt(index: number, script: (typeof FIXTURE_TOOL_SCRIPT)[number]): DeepStep {
+  return {
+    index,
+    at: new Date().toISOString(),
+    kind: "tool",
+    name: script.name,
+    args: script.args,
+    resultPreview: script.resultPreview,
+  };
+}
+
+/** Drive a fixture run forwards, emitting deep:step and finally deep:done. */
+function runFixtureSteps(n: number, run: DeepRun, brief: DeepBrief | null, startAt: number): void {
+  const timers: number[] = [];
+  const steps = fixtureToolScript(n);
+  let t = 700;
+  for (let i = startAt; i < steps.length; i += 1) {
+    const script = steps[i];
+    if (!script) continue;
+    const isLast = i === steps.length - 1;
+    t += 900 + Math.round(Math.random() * 700);
+    timers.push(
+      window.setTimeout(() => {
+        const step = fixtureStepAt(i, script);
+        run.steps = [...run.steps, step];
+        run.usage = {
+          promptTokens: run.usage.promptTokens + 2400 + i * 300,
+          completionTokens: run.usage.completionTokens + 160,
+          costUsd: Math.round((run.usage.costUsd + 0.0042 + i * 0.0011) * 100000) / 100000,
+          calls: run.usage.calls + 1,
+        };
+        emitFixtureEvent({ type: "deep:step", n, runId: run.id, step });
+
+        if (isLast) {
+          run.status = "done";
+          run.finishedAt = new Date().toISOString();
+          run.brief = brief;
+          emitFixtureEvent({ type: "deep:done", n, runId: run.id, run: clone(run) });
+        }
+      }, t),
+    );
+  }
+  fixtureRunTimers.set(run.id, timers);
+}
+
+/** The in-progress fixture run resumes the first time its PR is opened. */
+let advanced = new Set<number>();
+function advanceFixtureRun(n: number): void {
+  if (!fixtureDb || advanced.has(n)) return;
+  const run = fixtureDb.deepRuns[n]?.[0];
+  if (!run || run.status !== "running") return;
+  advanced.add(n);
+  runFixtureSteps(n, run, fixtureDb.deepRuns[n]?.[1]?.brief ?? null, run.steps.length);
+}
+
+async function startFixtureDeepRun(
+  n: number,
+  options: { model?: string; requestedBy: string },
+): Promise<DeepRun> {
+  const store = await db();
+  await latency(240, 520);
+  if (options.requestedBy.trim() === "") {
+    throw new ApiError(400, "requestedBy is required: a deep run is always attributed to a person.");
+  }
+  const runs = store.deepRuns[n] ?? [];
+  if (runs[0]?.status === "running") {
+    throw new ApiError(409, `A deep run is already in progress for PR #${n}.`);
+  }
+  if (store.deepSpend.todayUsd >= store.deepSpend.capUsd) {
+    throw new ApiError(402, `Today's deep analysis spend has reached the cap of $${store.deepSpend.capUsd}.`);
+  }
+
+  const item = findFixtureItem(store, n);
+  const model = options.model ?? store.deepModels.default ?? "anthropic/claude-haiku-4.5";
+  const run: DeepRun = {
+    id: `deep_${Date.now().toString(36)}`,
+    prNumber: n,
+    headSha: item?.snapshot.headSha ?? "unknown",
+    evaluationId: item?.evaluation?.id ?? null,
+    dossierBuiltAt: store.dossiers[n]?.builtAt ?? new Date().toISOString(),
+    model,
+    mock: !store.deepModels.keyPresent,
+    startedAt: new Date().toISOString(),
+    status: "running",
+    steps: [],
+    brief: null,
+    usage: { promptTokens: 0, completionTokens: 0, costUsd: 0, calls: 0 },
+    requestedBy: options.requestedBy.trim(),
+  };
+  store.deepRuns[n] = [run, ...runs];
+  store.deepSpend = {
+    ...store.deepSpend,
+    runsToday: store.deepSpend.runsToday + 1,
+  };
+
+  emitFixtureEvent({ type: "deep:start", n, runId: run.id, model });
+  // Replay the canned brief from the completed 1650 run, retargeted at this PR.
+  const canned = store.deepRuns[1650]?.find((r) => r.brief)?.brief ?? null;
+  const brief = canned
+    ? {
+        ...clone(canned),
+        summary:
+          n === 1650
+            ? canned.summary
+            : `Fixture brief replayed from the PR 1650 example, so the detail below describes that case rather than #${n}. ${canned.summary}`,
+      }
+    : null;
+  runFixtureSteps(n, run, brief, 0);
+  return clone(run);
+}
+
+async function stopFixtureDeepRun(n: number, runId: string): Promise<DeepRun | null> {
+  const store = await db();
+  await latency(120, 260);
+  const run = store.deepRuns[n]?.find((r) => r.id === runId);
+  if (!run) throw new ApiError(404, `No deep run ${runId} for PR #${n}.`);
+  for (const timer of fixtureRunTimers.get(runId) ?? []) window.clearTimeout(timer);
+  fixtureRunTimers.delete(runId);
+  run.status = "aborted";
+  run.finishedAt = new Date().toISOString();
+  run.error = "Stopped by the reviewer.";
+  emitFixtureEvent({ type: "deep:done", n, runId, run: clone(run) });
+  return clone(run);
+}
+
+async function fixtureProposal(n: number, fromDeep?: string): Promise<Proposal> {
+  const store = await db();
+  await latency(160, 380);
+  const base = store.proposals[n];
+  if (!fromDeep) {
+    if (!base) throw new ApiError(404, `PR #${n} has no evaluation to draft an action from`);
+    return clone(base);
+  }
+  const run = store.deepRuns[n]?.find((r) => r.id === fromDeep);
+  // A failed run can still have the model's last attempt, and the reviewer may want
+  // to edit that into a reply.
+  const brief = run?.brief ?? ((run as (DeepRun & { partialBrief?: DeepBrief | null }) | undefined)?.partialBrief ?? null);
+  if (!run || !brief) throw new ApiError(404, `Deep run ${fromDeep} has no brief to draft from.`);
+  const item = findFixtureItem(store, n);
+  return clone({
+    id: `prop_${n}_${fromDeep}`,
+    prNumber: n,
+    headSha: run.headSha,
+    evaluationId: run.evaluationId ?? item?.evaluation?.id ?? "",
+    kind: "comment",
+    title: "Reply drafted from the deep analysis brief",
+    body: `${brief.draftReply}\n\nDrafted by the FujiNet PR triage harness from deep run ${run.id} (${run.model}); posted by {{confirmedBy}} after human review.`,
+    labels: base?.labels ?? [],
+    rationale: brief.rationale,
+    generatedAt: new Date().toISOString(),
+  });
 }
 
 const STAGES: Array<{ stage: ScanStage; detail: (item: PrListItem) => string }> = [
@@ -664,13 +1056,13 @@ const STAGE_WORDS: Record<ScanStage, string> = {
  * `onEvent` is called for every event, which is how the app folds `pr:done`
  * evaluations back into its list without refetching.
  */
-export function useScanEvents(onEvent?: (event: ScanEvent) => void): ScanProgress {
+export function useScanEvents(onEvent?: (event: HarnessEvent) => void): ScanProgress {
   const [progress, setProgress] = useState<ScanProgress>(IDLE);
   const handlerRef = useRef(onEvent);
   handlerRef.current = onEvent;
 
   useEffect(() => {
-    const unsubscribe = subscribeScanEvents(
+    const unsubscribe = subscribeEvents(
       (event) => {
         handlerRef.current?.(event);
         setProgress((prev) => reduceScanEvent(prev, event));
@@ -684,7 +1076,7 @@ export function useScanEvents(onEvent?: (event: ScanEvent) => void): ScanProgres
   return progress;
 }
 
-export function reduceScanEvent(prev: ScanProgress, event: ScanEvent): ScanProgress {
+export function reduceScanEvent(prev: ScanProgress, event: HarnessEvent): ScanProgress {
   switch (event.type) {
     case "scan:start":
       return {

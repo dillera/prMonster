@@ -24,6 +24,11 @@ import { QUESTIONS, QUESTIONS_BY_ID } from "./jev.js";
  */
 export const DIFF_UNAVAILABLE_GATE = "diff_unavailable";
 
+/** Info gates the dossier contributes; see dossier.ts. */
+export const DOSSIER_DRIFT_GATE = "dossier_drift";
+export const DOSSIER_RECENT_ORIGIN_GATE = "dossier_recent_origin_pr";
+const INFORMATIONAL_GATES = new Set([DIFF_UNAVAILABLE_GATE, DOSSIER_DRIFT_GATE, DOSSIER_RECENT_ORIGIN_GATE]);
+
 const UNCERTAIN_LOW = 0.35;
 const UNCERTAIN_HIGH = 0.65;
 
@@ -170,7 +175,7 @@ export function decide(
   const diffUnavailable = gates.some((g) => g.id === DIFF_UNAVAILABLE_GATE && !g.passed);
 
   // 1. Hard gates.
-  const active = gates.filter((g) => g.severity !== "off" && g.id !== DIFF_UNAVAILABLE_GATE);
+  const active = gates.filter((g) => g.severity !== "off" && !INFORMATIONAL_GATES.has(g.id));
   const hardFailed = active.filter((g) => g.severity === "hard" && !g.passed);
   const softFailed = active.filter((g) => g.severity === "soft" && !g.passed);
 
@@ -318,6 +323,64 @@ export function decide(
         });
       }
     }
+  }
+
+  // --- deep-analysis signals (DESIGN-deep.md). Reasons, never blocks. ---
+  const driftGate = gates.find((g) => g.id === DOSSIER_DRIFT_GATE);
+  const recentOriginGate = gates.find((g) => g.id === DOSSIER_RECENT_ORIGIN_GATE);
+  const removesBehaviour = answers["revision_removes_behaviour"];
+  const bodyMatches = answers["body_matches_diff"];
+  const claimsNeedCheck = answers["author_claims_need_verification"];
+
+  const removesProbability =
+    removesBehaviour?.type === "choice" ? (removesBehaviour.probabilities["removes"] ?? 0) : 0;
+  const revisionRemoved = removesProbability >= 0.6;
+
+  if (revisionRemoved) {
+    reasons.push({
+      code: "revision_removed_behaviour",
+      text: `Jev is ${pct(removesProbability)} sure the latest revision deletes behaviour that existed without replacing it`,
+      source: "jev",
+      questionId: "revision_removes_behaviour",
+    });
+    if (recentOriginGate && !recentOriginGate.passed) explanation.push(recentOriginGate.detail);
+  }
+
+  const driftFlagged = driftGate !== undefined && !driftGate.passed;
+  const bodyMismatch = bodyMatches?.type === "noul" && bodyMatches.noul <= 0.4;
+  if (bodyMismatch || driftFlagged) {
+    const parts: string[] = [];
+    if (bodyMismatch && bodyMatches.type === "noul") {
+      parts.push(`Jev is ${pct(1 - bodyMatches.noul)} sure the description no longer matches the diff`);
+    }
+    if (driftFlagged && driftGate) parts.push(driftGate.detail);
+    reasons.push({
+      code: "description_drift",
+      text: parts.join("; "),
+      source: bodyMismatch ? "jev" : "gate",
+      ...(bodyMismatch ? { questionId: "body_matches_diff" } : { gateId: DOSSIER_DRIFT_GATE }),
+    });
+    if (driftFlagged && driftGate?.evidence?.length) {
+      explanation.push(
+        `The description still names ${driftGate.evidence.slice(0, 4).join(", ")}, which the current diff does not contain.`,
+      );
+    }
+  }
+
+  const claimsFlagged = claimsNeedCheck?.type === "noul" && claimsNeedCheck.noul >= 0.6;
+  const recentOrigin = recentOriginGate !== undefined && !recentOriginGate.passed;
+  if (recentOrigin || claimsFlagged || revisionRemoved) {
+    const why: string[] = [];
+    if (recentOrigin) why.push("a recently merged pull request lost lines to this change");
+    if (claimsFlagged && claimsNeedCheck.type === "noul") {
+      why.push(`the author makes checkable claims about the code (${pct(claimsNeedCheck.noul)})`);
+    }
+    if (revisionRemoved) why.push("the latest revision removes behaviour");
+    reasons.push({
+      code: "deep_analysis_suggested",
+      text: `A deep analysis pass would help here: ${why.join(", ")}`,
+      source: "policy",
+    });
   }
 
   // Contributing factors worth naming whatever the route (§4.5 step 5).

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseDiff } from "../src/server/chunk.js";
 import { decide } from "../src/server/decide.js";
 import { runGates } from "../src/server/gates.js";
-import { buildProposal, proposalId, sanitize, signBody } from "../src/server/proposals.js";
+import { briefProposal, buildProposal, proposalId, sanitize, signBody } from "../src/server/proposals.js";
 import type { Evaluation, GateResult, JevAnswer } from "../src/shared/types.js";
 import { diffOf, file, policy, snapshot } from "./fixtures.js";
 
@@ -105,5 +105,53 @@ describe("buildProposal", () => {
     const signed = signBody(p.body, "dillera");
     expect(signed).toContain("posted by dillera after human review");
     expect(signed).not.toContain("<confirmedBy>");
+  });
+});
+
+describe("briefProposal", () => {
+  const brief = {
+    summary: "s",
+    revisionChanges: [],
+    removedBehaviour: [],
+    claims: [],
+    openQuestions: [],
+    recommendedAction: "ask_original_author" as const,
+    rationale: ["the lines are 3 days old"],
+    draftReply: "Thanks for the bisect. Could we hear from `wdathing`?",
+    confidence: "medium" as const,
+    caveats: [],
+  };
+
+  it("swaps in the draft reply, labels the model, and keeps the Jev footer and id", () => {
+    const snap = snapshot();
+    const gates = runGates(snap, parseDiff(""), policy());
+    const evaluation = evaluationFor(gates, {});
+    const base = buildProposal({ snapshot: snap, evaluation, repoLabels: [] });
+    const p = briefProposal(base, { id: "deep_abc", model: "anthropic/claude-haiku-4.5", mock: false }, brief);
+
+    expect(p.id).toBe(base.id); // same staleness token, same confirm gate
+    expect(p.headSha).toBe(base.headSha);
+    expect(p.kind).toBe("comment");
+    expect(p.body).toContain("Thanks for the bisect");
+    // Model text passes through as markdown: its code spans must survive.
+    expect(p.body).toContain("`wdathing`");
+    expect(p.body).toContain("deep analysis run `deep_abc`");
+    expect(p.body).toContain("the model can be wrong");
+    // The footer still credits Jev, not the deep model.
+    expect(p.body).toContain(`(Jev ${evaluation.model})`);
+    expect(p.body).not.toContain("Jev anthropic/claude-haiku-4.5");
+    expect(p.body).toContain("<confirmedBy>");
+    expect(p.rationale[0]).toContain("ask_original_author");
+  });
+
+  it("says when the brief came from a mock run", () => {
+    const snap = snapshot();
+    const base = buildProposal({
+      snapshot: snap,
+      evaluation: evaluationFor(runGates(snap, parseDiff(""), policy()), {}),
+      repoLabels: [],
+    });
+    const p = briefProposal(base, { id: "deep_x", model: "m", mock: true }, brief);
+    expect(p.body).toContain("in mock mode");
   });
 });

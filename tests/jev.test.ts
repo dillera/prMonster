@@ -6,6 +6,7 @@ import { MIN_SPLIT_TOKENS, parseDiff, planChunks, splitChunk } from "../src/serv
 import { runGates } from "../src/server/gates.js";
 import {
   CHUNK_QUESTIONS,
+  DOSSIER_QUESTION_IDS,
   HARD_STATE_TOKEN_LIMIT,
   HttpJevBackend,
   PR_QUESTIONS,
@@ -59,6 +60,17 @@ describe("question catalog", () => {
       "category",
       "risk",
       "description_quality",
+      // Asked only when a dossier exists (DESIGN-deep.md).
+      "revision_removes_behaviour",
+      "body_matches_diff",
+      "maintainer_requested_change",
+      "author_claims_need_verification",
+    ]);
+    expect([...DOSSIER_QUESTION_IDS]).toEqual([
+      "revision_removes_behaviour",
+      "body_matches_diff",
+      "maintainer_requested_change",
+      "author_claims_need_verification",
     ]);
     expect(CHUNK_QUESTIONS.map((q) => q.id)).toEqual([
       "duplicates_platform_code",
@@ -191,7 +203,10 @@ describe("asking", () => {
     const plan = planChunks(parseDiff(diffOf("lib/a.cpp", ["int a;"])), policy());
     await askChunk(backend, buildChunkState(snap, plan.chunks[0]!), "jev-latest");
 
-    expect(Object.keys(backend.calls[0]!.questions)).toEqual(PR_QUESTIONS.map((q) => q.id));
+    // No dossier in the state, so the four dossier questions are not asked.
+    expect(Object.keys(backend.calls[0]!.questions)).toEqual(
+      PR_QUESTIONS.filter((q) => !DOSSIER_QUESTION_IDS.has(q.id)).map((q) => q.id),
+    );
     expect(Object.keys(backend.calls[1]!.questions)).toEqual(CHUNK_QUESTIONS.map((q) => q.id));
     expect(backend.calls[0]!.model).toBe("jev-latest");
     // Untrusted PR text is only ever in state, never in instructions.
@@ -389,7 +404,7 @@ describe("MockJevBackend", () => {
       model: "jev-latest",
     });
     expect(a.answers).toEqual(b.answers);
-    expect(Object.keys(a.answers).sort()).toEqual(PR_QUESTIONS.map((q) => q.id).sort());
+    expect(Object.keys(a.answers).sort()).toEqual(Object.keys(questionBodies("pr")).sort());
   });
 
   it("biases a tiny well-described PR good and a huge one-liner bad", async () => {

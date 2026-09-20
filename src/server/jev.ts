@@ -15,6 +15,7 @@ import type { TypeSafeClient } from "@typesafe-ai/sdk";
 import type {
   AggregatedAnswer,
   ChunkResult,
+  Dossier,
   GateResult,
   JevAnswer,
   Policy,
@@ -390,7 +391,80 @@ export const QUESTIONS: QuestionDef[] = [
     polarity: "good",
     levels: 4,
   },
+
+  // --- PR level, asked only when a dossier exists (DESIGN-deep.md) ---
+  {
+    id: "revision_removes_behaviour",
+    kind: "pr",
+    type: "choice",
+    label: "What the latest revision did",
+    instructions:
+      "Judging by `latestDelta.summary`, `latestDelta.diff` and `originPrs`, what did the latest revision do to the behaviour that the earlier revision or the base code provided?",
+    criteria: {
+      removes: "Deletes behaviour that existed, without replacing it",
+      restricts: "Keeps the behaviour but limits when it applies",
+      relocates: "Moves the behaviour elsewhere or makes it opt-in with an equivalent path",
+      adds: "Only adds behaviour",
+      unchanged: "No behavioural change (comments, formatting, description only)",
+    },
+    weight: 0,
+    polarity: "info",
+  },
+  {
+    id: "body_matches_diff",
+    kind: "pr",
+    type: "noul",
+    label: "Description matches the diff",
+    instructions:
+      "Does `pr.body` describe the change that is actually in the current diff, as summarised by `latestDelta.summary` and `drift`, rather than an earlier version of the change?",
+    criteria: {
+      true: "The description matches the current diff",
+      false: "The description describes an approach the current diff no longer takes",
+    },
+    weight: 1.5,
+    polarity: "good",
+  },
+  {
+    id: "maintainer_requested_change",
+    kind: "pr",
+    type: "noul",
+    label: "Maintainer asked for this",
+    instructions: "Do the maintainer comments in `thread` ask for the change that `latestDelta.summary` describes?",
+    criteria: {
+      true: "A maintainer asked for this change or this direction",
+      false: "No maintainer asked for it, or they asked for something different",
+    },
+    weight: 0,
+    polarity: "info",
+  },
+  {
+    id: "author_claims_need_verification",
+    kind: "pr",
+    type: "noul",
+    label: "Author makes checkable claims",
+    instructions:
+      "Does `author_latest_comment` assert facts about the codebase (what code runs, what a function already does, which boards define a pin) that a reviewer would need to check against the source rather than take on trust?",
+    criteria: {
+      true: "Makes checkable claims about code behaviour or configuration",
+      false: "Only describes the change or the testing done",
+    },
+    weight: 0,
+    polarity: "info",
+  },
 ];
+
+/**
+ * Questions that only make sense with a dossier in the state. They are left out
+ * of the request entirely when there is none, rather than asked about fields
+ * that are not there — Jev reads literally, and an absent `latestDelta` would
+ * be answered about nothing.
+ */
+export const DOSSIER_QUESTION_IDS = new Set([
+  "revision_removes_behaviour",
+  "body_matches_diff",
+  "maintainer_requested_change",
+  "author_claims_need_verification",
+]);
 
 export const QUESTIONS_BY_ID: Record<string, QuestionDef> = Object.fromEntries(
   QUESTIONS.map((q) => [q.id, q]),
@@ -400,10 +474,11 @@ export const PR_QUESTIONS = QUESTIONS.filter((q) => q.kind === "pr");
 export const CHUNK_QUESTIONS = QUESTIONS.filter((q) => q.kind === "chunk");
 
 /** The `questions` map exactly as the API wants it. */
-export function questionBodies(kind: "pr" | "chunk"): Record<string, JevQuestionBody> {
+export function questionBodies(kind: "pr" | "chunk", withDossier = false): Record<string, JevQuestionBody> {
   const out: Record<string, JevQuestionBody> = {};
   for (const q of QUESTIONS) {
     if (q.kind !== kind) continue;
+    if (DOSSIER_QUESTION_IDS.has(q.id) && !withDossier) continue;
     const body: JevQuestionBody = { type: q.type, instructions: q.instructions };
     if (q.criteria !== undefined) body.criteria = q.criteria;
     out[q.id] = body;
@@ -428,6 +503,16 @@ export function longestQuestionTokens(kind: "pr" | "chunk"): number {
 export const HARD_STATE_TOKEN_LIMIT = 32_000;
 const MAX_CHANGED_FILES_IN_STATE = 120;
 
+/** The compact dossier view the four deep questions are asked over. */
+export interface DossierView {
+  latest_delta_summary: string;
+  latest_delta_diff: string;
+  origin_prs: Array<{ number: number; title: string; purpose: string; days_ago: number; lines_deleted_from_it: number; author: string; author_in_thread: boolean }>;
+  maintainer_comments: Array<{ author: string; at: string; body: string }>;
+  author_latest_comment: string;
+  drift: string[];
+}
+
 export interface PrState {
   pr: {
     title: string;
@@ -447,6 +532,8 @@ export interface PrState {
   };
   gate_summary: string[];
   project_rules: string;
+  /** Present only when a dossier was built; the four deep questions read it. */
+  dossier?: DossierView;
 }
 
 export interface ChunkState {
@@ -489,11 +576,55 @@ export function gateSummary(gates: GateResult[]): string[] {
     .map((g) => `${g.id}: failed (${g.detail})`);
 }
 
+const MAX_DELTA_LINES_IN_STATE = 30;
+const MAX_MAINTAINER_COMMENTS = 6;
+const MAX_MAINTAINER_COMMENT_CHARS = 1200;
+const MAX_AUTHOR_COMMENT_CHARS = 1500;
+
+/**
+ * Squeeze the dossier down to what the four questions actually name. Sending
+ * the whole thing would be the "large irrelevant state" the jaggedness rules
+ * warn about.
+ */
+export function buildDossierView(dossier: Dossier, authorLogin: string): DossierView {
+  const purposeOf = (prNumber: number): string => {
+    const origin = dossier.deletedLineOrigins.find((o) => o.pr?.number === prNumber);
+    return (origin?.pr?.body ?? "").replace(/\s+/g, " ").trim().slice(0, 300);
+  };
+
+  const maintainerComments = dossier.thread
+    .filter((t) => t.isMaintainer && t.body.trim() !== "")
+    .slice(-MAX_MAINTAINER_COMMENTS)
+    .map((t) => ({ author: t.author, at: t.at, body: t.body.slice(0, MAX_MAINTAINER_COMMENT_CHARS) }));
+
+  const authorLatest = [...dossier.thread]
+    .reverse()
+    .find((t) => t.author.toLowerCase() === authorLogin.toLowerCase() && t.kind !== "commit" && t.body.trim() !== "");
+
+  return {
+    latest_delta_summary: dossier.latestDelta?.summary ?? "",
+    latest_delta_diff: (dossier.latestDelta?.diff ?? "").split("\n").slice(0, MAX_DELTA_LINES_IN_STATE).join("\n"),
+    origin_prs: dossier.originPrs.map((p) => ({
+      number: p.number,
+      title: p.title,
+      purpose: purposeOf(p.number),
+      days_ago: p.daysAgo,
+      lines_deleted_from_it: p.linesDeletedFromIt,
+      author: p.author,
+      author_in_thread: p.authorInThread,
+    })),
+    maintainer_comments: maintainerComments,
+    author_latest_comment: (authorLatest?.body ?? "").slice(0, MAX_AUTHOR_COMMENT_CHARS),
+    drift: dossier.drift.map((d) => d.detail),
+  };
+}
+
 export function buildPrState(
   snapshot: PrSnapshot,
   gates: GateResult[],
   chunksMeta: ChunksMeta,
   policy: Pick<Policy, "jev">,
+  dossier?: Dossier | null,
 ): PrState {
   const budget = Math.min(policy.jev.maxStateTokens, HARD_STATE_TOKEN_LIMIT - longestQuestionTokens("pr") - 200);
 
@@ -527,6 +658,7 @@ export function buildPrState(
     },
     gate_summary: summary,
     project_rules: PR_PROJECT_RULES,
+    ...(dossier ? { dossier: buildDossierView(dossier, snapshot.author) } : {}),
   };
 
   // Last-resort trim. Halve the body first (it is usually what blew the budget:
@@ -539,6 +671,8 @@ export function buildPrState(
       state.changed_files = state.changed_files.slice(0, Math.floor(state.changed_files.length / 2));
     } else if (state.gate_summary.length > 1) {
       state.gate_summary = state.gate_summary.slice(0, Math.floor(state.gate_summary.length / 2));
+    } else if (state.dossier && state.dossier.latest_delta_diff.length > 0) {
+      state.dossier.latest_delta_diff = "";
     } else if (state.pr.body.length > 0) {
       state.pr.body = headTail(state.pr.body, 160);
       if (state.pr.body.length <= 160) break;
@@ -577,13 +711,14 @@ async function ask(
   state: unknown,
   kind: "pr" | "chunk",
   model: string,
+  withDossier = false,
 ): Promise<JevCallResult> {
-  const res = await backend.systemOne({ state, questions: questionBodies(kind), model });
+  const res = await backend.systemOne({ state, questions: questionBodies(kind, withDossier), model });
   return { answers: res.answers, model: res.model, usage: res.usage };
 }
 
 export function askPr(backend: JevBackend, state: PrState, model: string): Promise<JevCallResult> {
-  return ask(backend, state, "pr", model);
+  return ask(backend, state, "pr", model, state.dossier !== undefined);
 }
 
 export function askChunk(backend: JevBackend, state: ChunkState, model: string): Promise<JevCallResult> {

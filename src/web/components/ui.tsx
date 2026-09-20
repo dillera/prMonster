@@ -27,7 +27,7 @@ export function Pill({
   title,
 }: {
   children: ReactNode;
-  tone?: "neutral" | "good" | "warn" | "bad" | "accent";
+  tone?: "neutral" | "good" | "warn" | "bad" | "accent" | "merged";
   title?: string;
 }) {
   return (

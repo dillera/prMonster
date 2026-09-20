@@ -13,6 +13,8 @@ import { streamSSE } from "hono/streaming";
 
 import type { ActionKind, ActionRecord, Evaluation, PrListItem, PrSnapshot } from "../shared/types.js";
 import { decide } from "./decide.js";
+import { abortRun, beginDeepRun, readRuns as readDeepRuns, runById, runningFor, runsFor, spendToday } from "./deep.js";
+import { buildDossier } from "./dossier.js";
 import { recentEvents, sseFrame, subscribe } from "./events.js";
 import { sizeBucketFromGates } from "./gates.js";
 import {
@@ -28,6 +30,7 @@ import {
   writesEnabled,
 } from "./github.js";
 import { mapWithConcurrency } from "./jev.js";
+import { configuredModel, dailyCapUsd, listModels, openRouterKey } from "./llm.js";
 import { MOCK_MODEL } from "./mock.js";
 import {
   evaluatePr,
@@ -39,10 +42,12 @@ import {
   ScanInProgressError,
   startScan,
 } from "./pipeline.js";
-import { buildProposal, proposalId, signBody } from "./proposals.js";
+import { briefProposal, buildProposal, proposalId, signBody } from "./proposals.js";
 import {
   appendAction,
   ensureDataDir,
+  knownPrNumbers,
+  latestCachedSnapshot,
   evaluationById,
   evaluationsFor,
   latestEvaluation,
@@ -151,6 +156,56 @@ app.get("/api/prs", async (c) => {
     }
   });
   return c.json(items);
+});
+
+/**
+ * Pull requests the store knows about that are no longer open — closed or
+ * merged since we last scanned. Their evaluations, dossiers and deep runs are
+ * still worth reading, so they stay reachable here rather than vanishing from
+ * the dashboard the moment the author closes the PR.
+ */
+app.get("/api/prs/closed", async (c) => {
+  const latest = latestEvaluationsByPr();
+  let openNumbers = new Set<number>();
+  try {
+    openNumbers = new Set((await listOpenPrs()).map((p) => p.number));
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+
+  const deepByPr = new Set(readDeepRuns().map((r) => r.prNumber));
+  const candidates = knownPrNumbers()
+    .filter((n) => !openNumbers.has(n))
+    .filter((n) => latest.has(n) || deepByPr.has(n) || latestCachedSnapshot(n) !== null)
+    .sort((a, b) => b - a)
+    .slice(0, 20);
+
+  // One fetch each, only to learn the current state; everything else comes from
+  // what we already stored.
+  const items = await mapWithConcurrency(candidates, 4, async (n): Promise<PrListItem | null> => {
+    const stored = latestCachedSnapshot(n);
+    const evaluation = latest.get(n) ?? null;
+    if (!stored && !evaluation) return null;
+    let snapshot = stored;
+    try {
+      const fresh = await fetchSnapshot(n);
+      snapshot = fresh.snapshot;
+    } catch (err) {
+      if (!snapshot) return null;
+      return {
+        snapshot,
+        evaluation,
+        stale: true,
+        triage: triageFor(n),
+        fetchError: (err as Error).message,
+      };
+    }
+    if (!snapshot) return null;
+    return { snapshot, evaluation, stale: isStale(snapshot, evaluation), triage: triageFor(n) };
+  });
+
+  const closedWithHistory = items.filter((i): i is PrListItem => i !== null && i.snapshot.state !== "open");
+  return c.json({ closedWithHistory });
 });
 
 function prNumberOf(raw: string): number | null {
@@ -320,10 +375,27 @@ app.get("/api/prs/:n/proposal", async (c) => {
   if (n === null) return c.json({ error: "pr number must be a positive integer" }, 400);
   const evaluation = latestEvaluation(n);
   if (!evaluation) return c.json({ error: `PR #${n} has no evaluation yet — run a scan first` }, 404);
+
+  // ?fromDeep=<runId> swaps in the brief's draft reply. Same proposal id, same
+  // staleness check, same confirm gate: deep analysis changes the text, not the
+  // rules about posting it.
+  const fromDeep = c.req.query("fromDeep");
+  let deepRun = null;
+  if (fromDeep !== undefined && fromDeep !== "") {
+    deepRun = runById(fromDeep);
+    if (!deepRun) return c.json({ error: `no such deep run: ${fromDeep}` }, 404);
+    if (deepRun.prNumber !== n) return c.json({ error: `deep run ${fromDeep} is not for #${n}` }, 400);
+    if (!deepRun.brief) return c.json({ error: `deep run ${fromDeep} produced no brief` }, 409);
+  }
+
   try {
     const { snapshot } = await fetchSnapshot(n);
     const repoLabels = await listRepoLabels();
-    return c.json(buildProposal({ snapshot, evaluation, repoLabels }));
+    const proposal = buildProposal({ snapshot, evaluation, repoLabels });
+    if (deepRun?.brief) {
+      return c.json(briefProposal(proposal, deepRun, deepRun.brief));
+    }
+    return c.json(proposal);
   } catch (err) {
     return c.json({ error: (err as Error).message }, 502);
   }
@@ -521,6 +593,111 @@ app.post("/api/prs/:n/evaluate", async (c) => {
   } catch (err) {
     return c.json({ error: (err as Error).message }, 502);
   }
+});
+
+// --- deep analysis (DESIGN-deep.md) -------------------------------------------
+
+app.get("/api/prs/:n/dossier", async (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "pr number must be a positive integer" }, 400);
+  try {
+    // ?refresh=1 refetches the thread, the title and the body even when the head
+    // has not moved; the git-derived parts are reused from the cache for that SHA.
+    const dossier = await buildDossier(n, { refresh: c.req.query("refresh") === "1" });
+    if (!dossier.availability.git) {
+      // Still useful — thread, revisions and drift do not need git — but the
+      // client needs to know the provenance half is missing.
+      return c.json(dossier, 503);
+    }
+    return c.json(dossier);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+app.post("/api/prs/:n/deep", async (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "pr number must be a positive integer" }, 400);
+
+  let raw: { model?: unknown; requestedBy?: unknown };
+  try {
+    raw = (await c.req.json()) as typeof raw;
+  } catch {
+    return c.json({ error: "body must be JSON" }, 400);
+  }
+  if (typeof raw.requestedBy !== "string" || raw.requestedBy.trim() === "") {
+    return c.json({ error: "requestedBy is required: a deep run is always attributable to a person" }, 400);
+  }
+  if (raw.model !== undefined && (typeof raw.model !== "string" || raw.model.length > 200)) {
+    return c.json({ error: "model must be a model id string" }, 400);
+  }
+
+  const running = runningFor(n);
+  if (running) return c.json({ error: `a deep run is already in progress for #${n}`, runId: running }, 409);
+
+  const { todayUsd, runsToday } = spendToday();
+  const cap = dailyCapUsd();
+  if (todayUsd >= cap) {
+    return c.json(
+      { error: `the daily deep-analysis cap of $${cap.toFixed(2)} is reached ($${todayUsd.toFixed(4)} across ${runsToday} run(s))` },
+      402,
+    );
+  }
+
+  try {
+    const { snapshot } = await fetchSnapshot(n);
+    // beginDeepRun creates and registers the run synchronously, so the 202 body
+    // is always *this* run. Looking it up afterwards used to return the previous
+    // completed run, because building the dossier takes seconds.
+    const { run, done } = beginDeepRun({
+      prNumber: n,
+      requestedBy: raw.requestedBy.trim(),
+      snapshot,
+      ...(typeof raw.model === "string" && raw.model.trim() !== "" ? { model: raw.model.trim() } : {}),
+    });
+    void done.catch((err: unknown) => {
+      console.error(`[deep] run ${run.id} for #${n} failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    return c.json(run, 202);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+app.post("/api/prs/:n/deep/stop", async (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "pr number must be a positive integer" }, 400);
+  let raw: { runId?: unknown };
+  try {
+    raw = (await c.req.json()) as typeof raw;
+  } catch {
+    return c.json({ error: "body must be JSON" }, 400);
+  }
+  if (typeof raw.runId !== "string" || raw.runId === "") {
+    return c.json({ error: "runId is required" }, 400);
+  }
+  if (!abortRun(n, raw.runId)) {
+    return c.json({ error: `no deep run ${raw.runId} is running for #${n}` }, 404);
+  }
+  // The loop notices the abort, persists a partial run and emits deep:done.
+  return c.json({ stopped: true, runId: raw.runId });
+});
+
+app.get("/api/prs/:n/deep", (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "pr number must be a positive integer" }, 400);
+  const history = runsFor(n);
+  return c.json({ latest: history[0] ?? null, history });
+});
+
+app.get("/api/deep/models", async (c) => {
+  const models = await listModels();
+  return c.json({ models, default: configuredModel(), keyPresent: openRouterKey() !== null });
+});
+
+app.get("/api/deep/spend", (c) => {
+  const { todayUsd, runsToday } = spendToday();
+  return c.json({ todayUsd, capUsd: dailyCapUsd(), runsToday });
 });
 
 app.all("/api/*", (c) => c.json({ error: `no such endpoint: ${c.req.path}` }, 404));

@@ -13,10 +13,9 @@ import type {
   Policy,
   PrListItem,
   Proposal,
-  ScanEvent,
   TriageState,
 } from "../shared/types";
-import type { ActionRequest, HealthInfo, StatsSummary } from "./lib/api";
+import type { ActionRequest, HarnessEvent, HealthInfo, StatsSummary } from "./lib/api";
 import {
   ApiError,
   FIXTURES_MODE,
@@ -26,18 +25,21 @@ import {
   getProposal,
   getStats,
   listActions,
+  listClosedPrs,
   listPrs,
+  getPr,
   postAction,
   savePolicy,
   setTriage,
   startScan,
   useScanEvents,
 } from "./lib/api";
+import { DEFAULT_REPO } from "./github";
 import { AuditLog } from "./components/AuditLog";
 import { DetailPanel } from "./components/DetailPanel";
 import { Header, MockBanner } from "./components/Header";
 import { PolicyEditor } from "./components/PolicyEditor";
-import { PrList, kindOf, sortItems } from "./components/PrList";
+import { ClosedPrList, PrList, kindOf, sortItems } from "./components/PrList";
 import type { SortKey } from "./components/PrList";
 import type { DecisionFilter } from "./components/StatsRow";
 import { StatsRow } from "./components/StatsRow";
@@ -98,6 +100,9 @@ export function App() {
   const [stats, setStats] = useState<StatsSummary | null>(null);
   const [policy, setPolicy] = useState<Policy>(FALLBACK_POLICY);
   const [prs, setPrs] = useState<PrListItem[]>([]);
+  const [closedPrs, setClosedPrs] = useState<PrListItem[]>([]);
+  /** A PR opened by URL that is in neither list, fetched on its own. */
+  const [fetchedItem, setFetchedItem] = useState<PrListItem | null>(null);
   const [prsLoading, setPrsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -110,6 +115,8 @@ export function App() {
   const [scanError, setScanError] = useState<string | null>(null);
 
   const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [deepProposalRunId, setDeepProposalRunId] = useState<string | null>(null);
+  const [usingDeepProposal, setUsingDeepProposal] = useState(false);
   const [proposalLoading, setProposalLoading] = useState(false);
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [records, setRecords] = useState<Record<number, ActionRecord>>({});
@@ -131,6 +138,20 @@ export function App() {
     const [items, nextStats] = await Promise.all([listPrs(), getStats()]);
     setPrs(items);
     setStats(nextStats);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    listClosedPrs()
+      .then((items) => {
+        if (!cancelled) setClosedPrs(Array.isArray(items) ? items : []);
+      })
+      .catch(() => {
+        /* the closed section is secondary: if it cannot load, it stays hidden */
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -158,7 +179,7 @@ export function App() {
 
   // ------------------------------------------------------------ live events
   const onScanEvent = useCallback(
-    (event: ScanEvent): void => {
+    (event: HarnessEvent): void => {
       if (event.type === "pr:done") {
         const evaluation: Evaluation = event.evaluation;
         setPrs((prev) =>
@@ -184,10 +205,36 @@ export function App() {
     if (route.view === "pr" && route.n !== null) setLastSelected(route.n);
   }, [route.view, route.n]);
 
-  const selectedItem = useMemo(
-    () => prs.find((item) => item.snapshot.number === selected) ?? null,
-    [prs, selected],
-  );
+  const selectedItem = useMemo(() => {
+    if (selected === null) return null;
+    return (
+      prs.find((item) => item.snapshot.number === selected) ??
+      closedPrs.find((item) => item.snapshot.number === selected) ??
+      (fetchedItem?.snapshot.number === selected ? fetchedItem : null)
+    );
+  }, [prs, closedPrs, fetchedItem, selected]);
+
+  // #/pr/N for a pull request in neither list: fetch it on its own rather than
+  // telling the reader it does not exist. Closed PRs keep their evaluations,
+  // dossier and deep runs, and a link to one should still work.
+  useEffect(() => {
+    if (route.view !== "pr" || route.n === null) return;
+    const n = route.n;
+    if (prsLoading) return;
+    if (prs.some((i) => i.snapshot.number === n) || closedPrs.some((i) => i.snapshot.number === n)) return;
+    if (fetchedItem?.snapshot.number === n) return;
+    let cancelled = false;
+    getPr(n)
+      .then(({ snapshot, evaluation }) => {
+        if (!cancelled) setFetchedItem({ snapshot, evaluation, stale: false, triage: null });
+      })
+      .catch(() => {
+        if (!cancelled) setFetchedItem(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [route.view, route.n, prs, closedPrs, prsLoading, fetchedItem]);
 
   // Proposal for the selected PR. The evaluation id is a dependency: a
   // re-evaluation replaces the stored evaluation, and the draft action belongs to
@@ -201,6 +248,7 @@ export function App() {
     setProposal(null);
     setProposalError(null);
     setProposalLoading(true);
+    setDeepProposalRunId(null);
     getProposal(n)
       .then((p) => {
         if (!cancelled) setProposal(p);
@@ -266,6 +314,20 @@ export function App() {
     setRecords((prev) => ({ ...prev, [n]: record }));
     setActions((prev) => [record, ...prev]);
     return record;
+  }, []);
+
+  /** Load a deep run's draft reply into the action panel (DESIGN-deep.md, UI 3). */
+  const onUseAsProposal = useCallback((n: number, runId: string): void => {
+    setUsingDeepProposal(true);
+    setProposalError(null);
+    getProposal(n, runId)
+      .then((p) => {
+        setProposal(p);
+        setDeepProposalRunId(runId);
+        document.querySelector(".action")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      })
+      .catch((err: unknown) => setProposalError(errorText(err, "The brief could not be loaded as a proposal.")))
+      .finally(() => setUsingDeepProposal(false));
   }, []);
 
   // ------------------------------------------------------------ policy preview
@@ -429,6 +491,7 @@ export function App() {
                 onQueryChange={setQuery}
                 progress={progress}
               />
+              <ClosedPrList items={closedPrs} policy={activePolicy} selected={selected} />
             </div>
             <div className="layout__detail">
               <DetailPanel
@@ -445,6 +508,10 @@ export function App() {
                 onTriage={onTriage}
                 onSend={onSend}
                 scanning={scanning || progress.running}
+                repo={health?.repo ?? DEFAULT_REPO}
+                onUseAsProposal={onUseAsProposal}
+                usingDeepProposal={usingDeepProposal}
+                deepProposalRunId={deepProposalRunId}
               />
             </div>
           </>

@@ -164,11 +164,12 @@ interface ApiPr {
   html_url: string;
   draft?: boolean;
   state: string;
-  base: { ref: string };
+  base: { ref: string; sha: string };
   head: { ref: string; sha: string };
   created_at: string;
   updated_at: string;
   labels: Array<{ name: string }>;
+  merged_at?: string | null;
   mergeable?: boolean | null;
   mergeable_state?: string;
   additions?: number;
@@ -344,6 +345,15 @@ export function ciStateFrom(checks: CheckRun[]): CiState {
   return "green";
 }
 
+/**
+ * A closed pull request is still readable, and anything we already evaluated
+ * must stay reachable, so the real state travels with the snapshot.
+ */
+function prState(pr: ApiPr & { merged_at?: string | null }): PrSnapshot["state"] {
+  if (pr.merged_at) return "merged";
+  return pr.state === "closed" ? "closed" : "open";
+}
+
 export interface SnapshotResult {
   snapshot: PrSnapshot;
   /** null when GitHub would not give us the diff at all — never treat as empty. */
@@ -364,7 +374,20 @@ export async function fetchSnapshot(n: number, opts: { force?: boolean } = {}): 
     const cached = readSnapshotCache(n, headSha);
     if (cached && cached.updatedAt === pr.updated_at && typeof (cached as { diff?: string }).diff === "string") {
       const { diff, ...snapshot } = cached as PrSnapshot & { diff: string };
-      return { snapshot, diff, fromCache: true };
+      // The cache holds the expensive parts (files, diff, checks). The cheap PR
+      // detail we just fetched is authoritative for the volatile fields, and a
+      // cache entry written by an older build may not even have the right shape.
+      return {
+        snapshot: {
+          ...snapshot,
+          state: prState(pr),
+          draft: pr.draft === true,
+          mergeable: pr.mergeable ?? null,
+          mergeableState: pr.mergeable_state ?? "unknown",
+        },
+        diff,
+        fromCache: true,
+      };
     }
   }
 
@@ -395,7 +418,7 @@ export async function fetchSnapshot(n: number, opts: { force?: boolean } = {}): 
     authorAssociation: pr.author_association,
     url: pr.html_url,
     draft: pr.draft === true,
-    state: "open",
+    state: prState(pr),
     base: pr.base.ref,
     headRef: pr.head.ref,
     headSha,
@@ -493,4 +516,142 @@ export function cachedSnapshot(n: number, headSha: string, updatedAt: string): P
   const { diff: _diff, ...snapshot } = cached as PrSnapshot & { diff?: string };
   void _diff;
   return snapshot;
+}
+
+// --- richer reads for the dossier (DESIGN-deep.md) --------------------------
+
+export interface PrCommit {
+  sha: string;
+  date: string;
+  author: string;
+  subject: string;
+  message: string;
+  url: string;
+}
+
+interface ApiCommit {
+  sha: string;
+  html_url: string;
+  commit: {
+    message: string;
+    author: { name?: string; date?: string } | null;
+    committer: { date?: string } | null;
+  };
+  author: { login?: string } | null;
+}
+
+export async function getPrCommits(n: number): Promise<PrCommit[]> {
+  const { full } = githubRepo();
+  const commits = await ghJsonPaged<ApiCommit>(`/repos/${full}/pulls/${n}/commits?per_page=100`);
+  return commits.map((c) => ({
+    sha: c.sha,
+    date: c.commit.committer?.date ?? c.commit.author?.date ?? "",
+    author: c.author?.login ?? c.commit.author?.name ?? "unknown",
+    subject: (c.commit.message ?? "").split("\n")[0] ?? "",
+    message: c.commit.message ?? "",
+    url: c.html_url,
+  }));
+}
+
+export interface CommentEntry {
+  author: string;
+  association: string;
+  at: string;
+  body: string;
+  url: string;
+  path?: string;
+  line?: number;
+  state?: string;
+}
+
+interface ApiComment {
+  user: { login?: string } | null;
+  author_association?: string;
+  created_at?: string;
+  submitted_at?: string;
+  body?: string | null;
+  html_url?: string;
+  path?: string;
+  line?: number | null;
+  original_line?: number | null;
+  state?: string;
+}
+
+function toComment(c: ApiComment): CommentEntry {
+  const out: CommentEntry = {
+    author: c.user?.login ?? "unknown",
+    association: c.author_association ?? "NONE",
+    at: c.created_at ?? c.submitted_at ?? "",
+    body: c.body ?? "",
+    url: c.html_url ?? "",
+  };
+  if (c.path) out.path = c.path;
+  const line = c.line ?? c.original_line;
+  if (typeof line === "number") out.line = line;
+  if (c.state) out.state = c.state;
+  return out;
+}
+
+export async function getIssueComments(n: number): Promise<CommentEntry[]> {
+  const { full } = githubRepo();
+  return (await ghJsonPaged<ApiComment>(`/repos/${full}/issues/${n}/comments?per_page=100`)).map(toComment);
+}
+
+export async function getReviewComments(n: number): Promise<CommentEntry[]> {
+  const { full } = githubRepo();
+  return (await ghJsonPaged<ApiComment>(`/repos/${full}/pulls/${n}/comments?per_page=100`)).map(toComment);
+}
+
+export async function getReviewsDetailed(n: number): Promise<CommentEntry[]> {
+  const { full } = githubRepo();
+  return (await ghJsonPaged<ApiComment>(`/repos/${full}/pulls/${n}/reviews?per_page=100`)).map(toComment);
+}
+
+/** PRs associated with a commit — the fallback when a subject carries no `(#N)`. */
+export async function getCommitPulls(sha: string): Promise<number[]> {
+  const { full } = githubRepo();
+  if (!/^[0-9a-f]{7,40}$/.test(sha)) return [];
+  try {
+    const pulls = await ghJson<Array<{ number: number }>>(`/repos/${full}/commits/${sha}/pulls?per_page=10`, {
+      accept: "application/vnd.github+json",
+    });
+    return pulls.map((p) => p.number);
+  } catch {
+    return [];
+  }
+}
+
+export interface PrSummary {
+  number: number;
+  title: string;
+  body: string;
+  author: string;
+  url: string;
+  mergedAt: string | null;
+  files?: string[];
+}
+
+export async function getPrSummary(n: number, withFiles = false): Promise<PrSummary | null> {
+  const { full } = githubRepo();
+  try {
+    const pr = await ghJson<ApiPr & { merged_at?: string | null }>(`/repos/${full}/pulls/${n}`);
+    const out: PrSummary = {
+      number: pr.number,
+      title: pr.title,
+      body: pr.body ?? "",
+      author: pr.user?.login ?? "unknown",
+      url: pr.html_url,
+      mergedAt: pr.merged_at ?? null,
+    };
+    if (withFiles) out.files = (await getPrFiles(n)).map((f) => f.path);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/** The base commit the PR is measured against. */
+export async function getPrBaseSha(n: number): Promise<{ baseSha: string; baseRef: string; headSha: string }> {
+  const pr = await getPr(n);
+  return { baseSha: pr.base.sha, baseRef: pr.base.ref, headSha: pr.head.sha };
 }

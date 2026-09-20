@@ -32,6 +32,8 @@ const DESCRIPTION_LEGEND: Record<string, string> = {
   "3": "Explains problem, change, testing, and any follow-ups or known gaps",
 };
 
+const REVISION_OPTIONS = ["removes", "restricts", "relocates", "adds", "unchanged"];
+
 const CODE_QUALITY_LEGEND: Record<string, string> = {
   "0": "Clearly violates several project rules",
   "1": "One or two rule violations a reviewer would send back",
@@ -81,6 +83,30 @@ export const QUESTIONS: UiQuestion[] = [
     id: "description_quality", kind: "pr", type: "score", label: "Description quality",
     instructions: null, weight: 1, polarity: "good", levels: 4, legend: DESCRIPTION_LEGEND,
     meaning: "Higher levels mean a maintainer is better prepared to review.",
+  },
+
+  // ---------------------------------------------------------------- dossier level
+  // Asked only when a dossier exists (DESIGN-deep.md). They describe the revision
+  // history rather than the code, so they sit with the other PR level questions.
+  {
+    id: "revision_removes_behaviour", kind: "pr", type: "choice", label: "What the latest revision did to behaviour",
+    instructions: null, weight: 0, polarity: "info", options: REVISION_OPTIONS,
+    meaning: "Informational. Removes means behaviour that existed is gone with nothing in its place.",
+  },
+  {
+    id: "body_matches_diff", kind: "pr", type: "noul", label: "Description matches the current diff",
+    instructions: null, weight: 1.5, polarity: "good",
+    meaning: "High means the body describes the change that is in the diff now, not an earlier version of it.",
+  },
+  {
+    id: "maintainer_requested_change", kind: "pr", type: "noul", label: "A maintainer asked for this change",
+    instructions: null, weight: 0, polarity: "info",
+    meaning: "Informational. High means the thread contains a maintainer asking for this direction.",
+  },
+  {
+    id: "author_claims_need_verification", kind: "pr", type: "noul", label: "Author makes claims that need checking",
+    instructions: null, weight: 0, polarity: "info",
+    meaning: "Informational. High means the author asserts things about the codebase a reviewer should verify, which is what a deep pass does.",
   },
 
   // ---------------------------------------------------------------- chunk level

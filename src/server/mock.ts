@@ -163,8 +163,19 @@ export class MockJevBackend implements JevBackend {
     const quality = mockQuality(ctx);
     // The chunk state's file list is the stable per-chunk salt; the PR-level
     // state has no `files` key and salts to 0.
-    const state = req.state as { files?: Array<{ path: string }> } | undefined;
+    const state = req.state as
+      | {
+          files?: Array<{ path: string }>;
+          dossier?: {
+            latest_delta_summary?: string;
+            drift?: string[];
+            maintainer_comments?: unknown[];
+            author_latest_comment?: string;
+          };
+        }
+      | undefined;
     const salt = state?.files ? hashString(state.files.map((f) => f.path).join("|")) : 0;
+    const dossier = state?.dossier;
 
     const answers: Record<string, JevAnswer> = {};
     for (const id of Object.keys(req.questions)) {
@@ -178,6 +189,40 @@ export class MockJevBackend implements JevBackend {
         const hit = looksReviewerDirected(ctx.body ?? "");
         answers[id] = { type: "noul", noul: round3(hit ? 0.82 + rng() * 0.14 : 0.02 + rng() * 0.1) };
         continue;
+      }
+
+      // The four dossier questions read the dossier the state carries, so the
+      // mock answers them from the same facts the real model would see.
+      if (dossier) {
+        if (id === "body_matches_diff") {
+          const drifted = (dossier.drift ?? []).length > 0;
+          answers[id] = { type: "noul", noul: round3(drifted ? 0.08 + rng() * 0.18 : 0.78 + rng() * 0.18) };
+          continue;
+        }
+        if (id === "maintainer_requested_change") {
+          const asked = (dossier.maintainer_comments ?? []).length > 0;
+          answers[id] = { type: "noul", noul: round3(asked ? 0.66 + rng() * 0.22 : 0.06 + rng() * 0.14) };
+          continue;
+        }
+        if (id === "author_claims_need_verification") {
+          const claims = (dossier.author_latest_comment ?? "").length > 200;
+          answers[id] = { type: "noul", noul: round3(claims ? 0.74 + rng() * 0.2 : 0.1 + rng() * 0.2) };
+          continue;
+        }
+        if (id === "revision_removes_behaviour" && def.type === "choice") {
+          const summary = (dossier.latest_delta_summary ?? "").toLowerCase();
+          const labels = Object.keys((def.criteria ?? {}) as Record<string, unknown>);
+          const label = summary.includes("removed")
+            ? "removes"
+            : summary.includes("restored")
+              ? "relocates"
+              : summary.includes("added")
+                ? "adds"
+                : "unchanged";
+          const peak = Math.max(0, labels.indexOf(label));
+          answers[id] = choiceAnswer(labels, peak, sharpness);
+          continue;
+        }
       }
 
       if (def.type === "noul") {

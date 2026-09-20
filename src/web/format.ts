@@ -5,9 +5,12 @@ import type {
   CiState,
   Decision,
   DecisionKind,
+  DeepBrief,
+  DeepRun,
   Evaluation,
   GateResult,
   PrListItem,
+  PrSnapshot,
   SizeBucket,
 } from "../shared/types";
 
@@ -190,6 +193,88 @@ export function isDegradationCode(code: string): code is DegradationCode {
  * defensively keeps the web build compiling against either version of the shared
  * contract, and an absent field simply means no error.
  */
+// ---------------------------------------------------------------- pr state
+// PrSnapshot.state is being widened from "open" to "open" | "closed" | "merged" on
+// the server side, so it is read defensively here: an unknown or absent value reads
+// as open, which is what every snapshot meant before the widening.
+
+export type PrState = "open" | "closed" | "merged";
+
+export function stateOf(snapshot: PrSnapshot): PrState {
+  const value = (snapshot as PrSnapshot & { state?: unknown }).state;
+  return value === "closed" || value === "merged" ? value : "open";
+}
+
+/** A closed or merged pull request cannot be re-evaluated or written to. */
+export function isClosed(snapshot: PrSnapshot): boolean {
+  return stateOf(snapshot) !== "open";
+}
+
+export function stateLabel(state: PrState): string {
+  return state;
+}
+
+// ---------------------------------------------------------------- hints
+// Suggestions from the dossier gates (DESIGN-deep.md). These are not failures and
+// not degraded states: they tell a reviewer where to look. Grey, never amber.
+
+export type HintCode = "revision_removed_behaviour" | "description_drift" | "deep_analysis_suggested";
+
+const HINT_LABELS: Record<HintCode, string> = {
+  revision_removed_behaviour: "revision removed behaviour",
+  description_drift: "description drift",
+  deep_analysis_suggested: "deep analysis suggested",
+};
+
+export function isHintCode(code: string): code is HintCode {
+  return code in HINT_LABELS;
+}
+
+export interface Hint {
+  code: HintCode;
+  label: string;
+  /** The server's own sentence, shown as the tooltip. */
+  detail: string;
+}
+
+/** Hints carried by a decision's reason codes, in a fixed order. */
+export function hints(decision: Decision | null | undefined): Hint[] {
+  if (!decision) return [];
+  const order: HintCode[] = ["revision_removed_behaviour", "description_drift", "deep_analysis_suggested"];
+  const out: Hint[] = [];
+  for (const code of order) {
+    const reason = decision.reasons.find((r) => r.code === code);
+    if (reason) out.push({ code, label: HINT_LABELS[code], detail: reason.text });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- failed deep runs
+// A run can fail at brief validation after doing all the work. The server then keeps
+// the model's last attempt and the validation errors. Both fields are optional and
+// are being added to DeepRun on the server side, so they are read defensively: the
+// web build compiles against either version of the shared contract.
+
+export function partialBriefOf(run: DeepRun | null | undefined): DeepBrief | null {
+  if (!run) return null;
+  const value = (run as DeepRun & { partialBrief?: unknown }).partialBrief;
+  return value && typeof value === "object" ? (value as DeepBrief) : null;
+}
+
+export function validationErrorsOf(run: DeepRun | null | undefined): string[] {
+  if (!run) return [];
+  const value = (run as DeepRun & { validationErrors?: unknown }).validationErrors;
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+}
+
+export function formatUsdPrecise(value: number): string {
+  if (value === 0) return "$0.000";
+  if (value < 0.001) return `$${value.toFixed(5)}`;
+  if (value < 1) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(2)}`;
+}
+
 export function fetchErrorOf(item: PrListItem): string | null {
   const value = (item as PrListItem & { fetchError?: unknown }).fetchError;
   return typeof value === "string" && value.trim().length > 0 ? value : null;

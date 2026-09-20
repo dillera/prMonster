@@ -49,6 +49,9 @@ export function ActionPanel({
   onTriage,
   onSend,
   lastRecord,
+  fromDeepRunId,
+  readOnly,
+  readOnlyReason,
 }: {
   snapshot: PrSnapshot;
   proposal: Proposal | null;
@@ -59,6 +62,11 @@ export function ActionPanel({
   onTriage: (status: TriageState["status"], note?: string) => Promise<void>;
   onSend: (request: ActionRequest) => Promise<ActionRecord>;
   lastRecord: ActionRecord | null;
+  /** Set when this draft came from a deep analysis brief rather than a template. */
+  fromDeepRunId: string | null;
+  /** Closed or merged upstream: the draft stays readable, sending does not apply. */
+  readOnly: boolean;
+  readOnlyReason: string;
 }) {
   const [body, setBody] = useState("");
   const [edited, setEdited] = useState(false);
@@ -101,6 +109,11 @@ export function ActionPanel({
       <header className="action__head">
         <h3 className="action__title">Proposed action</h3>
         <Pill tone={proposal.kind === "review_approve" ? "warn" : "accent"}>{KIND_LABEL[proposal.kind]}</Pill>
+        {fromDeepRunId ? (
+          <Pill tone="accent" title={`Drafted from deep run ${fromDeepRunId}`}>
+            from deep run
+          </Pill>
+        ) : null}
         <span
           className="action__sha mono"
           title={`head ${proposal.headSha}\nevaluation ${proposal.evaluationId}\nproposal ${proposal.id}`}
@@ -225,19 +238,25 @@ export function ActionPanel({
           </button>
         ) : null}
         <span className="action__spacer" />
-        <button type="button" className="btn btn--danger" onClick={() => setModalKind(proposal.kind)}>
-          Send to GitHub...
-        </button>
-        {labels.length > 0 ? (
-          <button
-            type="button"
-            className="btn btn--ghost"
-            disabled={labelsUnavailable}
-            onClick={() => setModalKind("labels")}
-          >
-            Send labels...
-          </button>
-        ) : null}
+        {readOnly ? (
+          <span className="action__readonly">{readOnlyReason}</span>
+        ) : (
+          <>
+            <button type="button" className="btn btn--danger" onClick={() => setModalKind(proposal.kind)}>
+              Send to GitHub...
+            </button>
+            {labels.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn--ghost"
+                disabled={labelsUnavailable}
+                onClick={() => setModalKind("labels")}
+              >
+                Send labels...
+              </button>
+            ) : null}
+          </>
+        )}
       </div>
 
       {triage?.note ? <p className="action__triagenote">Local note: {triage.note}</p> : null}
@@ -254,6 +273,7 @@ export function ActionPanel({
           labels={labels}
           health={health}
           stale={stale}
+          fromDeepRunId={fromDeepRunId}
           onClose={() => setModalKind(null)}
           onSend={onSend}
         />
@@ -296,6 +316,7 @@ function ConfirmModal({
   labels,
   health,
   stale,
+  fromDeepRunId,
   onClose,
   onSend,
 }: {
@@ -306,6 +327,7 @@ function ConfirmModal({
   labels: string[];
   health: HealthInfo | null;
   stale: boolean;
+  fromDeepRunId: string | null;
   onClose: () => void;
   onSend: (request: ActionRequest) => Promise<ActionRecord>;
 }) {
@@ -369,6 +391,13 @@ function ConfirmModal({
         <p className="modal__lede">
           This is the only place the harness writes anything. Read the call, then confirm. Merging is never offered.
         </p>
+
+        {fromDeepRunId ? (
+          <p className="modal__provenance" role="note">
+            This body came from deep analysis run <code className="mono">{fromDeepRunId}</code>, which is model
+            generated. Read it as your own words before you send it; the footer names you as the person who posted it.
+          </p>
+        ) : null}
 
         {kind === "review_approve" ? (
           <p className="modal__warn" role="alert">

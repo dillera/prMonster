@@ -6,6 +6,7 @@
 
 import type {
   ChunkResult,
+  Dossier,
   Evaluation,
   JevAnswer,
   Policy,
@@ -15,6 +16,7 @@ import type {
 } from "../shared/types.js";
 import { parseDiff, planChunks } from "./chunk.js";
 import { decide, DIFF_UNAVAILABLE_GATE } from "./decide.js";
+import { buildDossier, dossierGates } from "./dossier.js";
 import { emit } from "./events.js";
 import { runGates, sizeBucketFromGates } from "./gates.js";
 import { fetchSnapshot, listOpenPrNumbers } from "./github.js";
@@ -121,6 +123,25 @@ export async function evaluatePr(n: number, opts: EvaluateOptions = {}): Promise
     detail: `${gates.length} gates, ${hardFailed.length} hard failure(s)`,
   });
 
+  // The dossier is deterministic context for the four deep PR questions. It is
+  // best-effort: a PR still evaluates fine without one, just without those
+  // questions and their reasons. Cached per head SHA, so re-scans are cheap.
+  let dossier: Dossier | null = null;
+  if (process.env["DEEP_DOSSIER"] !== "0") {
+    try {
+      dossier = await buildDossier(n, { refresh: opts.force === true });
+      gates.push(...dossierGates(dossier));
+      emit({
+        type: "pr:stage",
+        n,
+        stage: "gates",
+        detail: `dossier: ${dossier.revisions.length} revision(s), ${dossier.deletedLineOrigins.length} traced deleted line(s), ${dossier.drift.length} drift signal(s)`,
+      });
+    } catch (err) {
+      emit({ type: "pr:stage", n, stage: "gates", detail: `dossier unavailable: ${(err as Error).message}` });
+    }
+  }
+
   emit({ type: "pr:stage", n, stage: "chunk" });
   const plan = planChunks(parsed, policy);
   emit({
@@ -150,7 +171,13 @@ export async function evaluatePr(n: number, opts: EvaluateOptions = {}): Promise
 
     // The PR-level call is the only one whose failure costs us the evaluation.
     try {
-      const prState = buildPrState(snapshot, gates, { count: plan.chunks.length, coverage: plan.coverage }, policy);
+      const prState = buildPrState(
+        snapshot,
+        gates,
+        { count: plan.chunks.length, coverage: plan.coverage },
+        policy,
+        dossier,
+      );
       const prRes = await askPr(backend, prState, model);
       prAnswers = prRes.answers;
       reportedModel = prRes.model;

@@ -9,7 +9,7 @@
 // leave a half-parsed JSON file behind.
 
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync, readdirSync, unlinkSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -67,7 +67,9 @@ export const DEFAULT_POLICY: Policy = {
   maxUncertainNouls: 2,
   softGatePenalty: 6,
   skipJevWhenBlocked: false,
-  weights: {},
+  // Only the weighted deep question needs a default here; the rest of the
+  // weights come from config/policy.json and fall back to the catalog.
+  weights: { body_matches_diff: 1.5 },
   hardBlocks: { reviewer_directed_text: 0.7 },
   gates: {},
   jev: { model: "jev-latest", maxStateTokens: 14_000, maxChunksPerPr: 12, concurrency: 2 },
@@ -269,6 +271,52 @@ export function writeSnapshotCache(snapshot: PrSnapshot): void {
     // best effort
   }
   writeJsonAtomic(path, snapshot);
+}
+
+/**
+ * The most recent cached snapshot for a PR, whichever head it was taken at.
+ * Used to keep closed pull requests reachable: the open listing no longer
+ * carries them, but we still hold everything we learned while they were open.
+ */
+export function latestCachedSnapshot(n: number): PrSnapshot | null {
+  if (!Number.isInteger(n) || n <= 0) return null;
+  try {
+    const files = readdirSync(CACHE_DIR)
+      .filter((f) => f.startsWith(`${n}-`) && f.endsWith(".json"))
+      .map((f) => {
+        const full = resolve(CACHE_DIR, f);
+        return { full, at: statSync(full).mtimeMs };
+      })
+      .sort((a, b) => b.at - a.at);
+    for (const f of files) {
+      const cached = readJson<(PrSnapshot & { diff?: string }) | null>(f.full, null);
+      if (cached) {
+        const { diff: _diff, ...snapshot } = cached;
+        void _diff;
+        return snapshot;
+      }
+    }
+  } catch {
+    // no cache directory yet
+  }
+  return null;
+}
+
+/** Every PR number the store knows anything about. */
+export function knownPrNumbers(): number[] {
+  const out = new Set<number>();
+  for (const e of readEvaluations()) out.add(e.prNumber);
+  for (const t of Object.values(readTriage())) out.add(t.prNumber);
+  for (const a of readActions()) out.add(a.prNumber);
+  try {
+    for (const f of readdirSync(CACHE_DIR)) {
+      const m = /^(\d+)-[0-9a-f]+\.json$/.exec(f);
+      if (m?.[1]) out.add(Number(m[1]));
+    }
+  } catch {
+    // no cache directory yet
+  }
+  return [...out];
 }
 
 export function newId(prefix: string): string {

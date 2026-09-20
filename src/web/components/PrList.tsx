@@ -1,5 +1,7 @@
 // PR list and card (DESIGN.md 7.3).
 
+import { useState } from "react";
+
 import type { DecisionKind, Policy, PrListItem } from "../../shared/types";
 import type { ScanProgress, ScanStage } from "../lib/api";
 import {
@@ -8,8 +10,11 @@ import {
   degradations,
   fetchErrorOf,
   formatNumber,
+  hints,
   isDegradationCode,
+  isHintCode,
   relativeTime,
+  stateOf,
   shortSha,
   sizeBucketOf,
 } from "../format";
@@ -167,6 +172,49 @@ export function PrList({
   );
 }
 
+/**
+ * Pull requests that are closed or merged but still have evaluations, a dossier or a
+ * deep run. Collapsed by default: this is history, not the queue.
+ */
+export function ClosedPrList({
+  items,
+  policy,
+  selected,
+}: {
+  items: PrListItem[];
+  policy: Policy;
+  selected: number | null;
+}) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+
+  return (
+    <section className="closedlist" aria-label="Recently closed with history">
+      <button
+        type="button"
+        className="closedlist__head"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="closedlist__chev mono" aria-hidden="true">
+          {open ? "-" : "+"}
+        </span>
+        <span className="closedlist__title">Recently closed with history</span>
+        <span className="closedlist__count mono">{items.length}</span>
+      </button>
+      {open ? (
+        <ul className="prlist__items closedlist__items">
+          {items.map((item) => (
+            <li key={item.snapshot.number}>
+              <PrCard item={item} policy={policy} selected={selected === item.snapshot.number} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 function PrCard({
   item,
   policy,
@@ -182,14 +230,19 @@ function PrCard({
   const kind: DecisionKind | "UNEVALUATED" = evaluation ? evaluation.decision.kind : "UNEVALUATED";
   const composite = evaluation?.decision.composite ?? 0;
   const size = evaluation ? sizeBucketOf(evaluation.gates) : null;
+  const state = stateOf(snapshot);
   const notices = degradations(evaluation?.decision);
+  const cardHints = hints(evaluation?.decision);
   const fetchError = fetchErrorOf(item);
   // Degraded states are the most important thing on the card, so they lead the
   // reason list whatever order the server sent.
   const allReasons = evaluation?.decision.reasons ?? [];
+  // Degraded states lead, then ordinary findings; the hint codes are already shown
+  // as pills, so they go last rather than crowding out a real finding.
   const ordered = [
     ...allReasons.filter((r) => isDegradationCode(r.code)),
-    ...allReasons.filter((r) => !isDegradationCode(r.code)),
+    ...allReasons.filter((r) => !isDegradationCode(r.code) && !isHintCode(r.code)),
+    ...allReasons.filter((r) => isHintCode(r.code)),
   ];
   const reasons = ordered.slice(0, 2);
   const fallback = evaluation?.decision.explanation.slice(0, 1) ?? [];
@@ -203,6 +256,18 @@ function PrCard({
       <div className="prcard__top">
         <span className="prcard__number mono">#{snapshot.number}</span>
         <DecisionBadge kind={kind} size="sm" />
+        {state !== "open" ? (
+          <Pill
+            tone={state === "merged" ? "merged" : "neutral"}
+            title={
+              state === "merged"
+                ? "Merged upstream. Kept here for its history; nothing can be written to it."
+                : "Closed upstream. Kept here for its history; nothing can be written to it."
+            }
+          >
+            {state}
+          </Pill>
+        ) : null}
         {stage ? (
           <span className="stagechip" title={stage.detail ?? STAGE_LABEL[stage.stage]}>
             <span className="stagechip__spin" aria-hidden="true" />
@@ -233,6 +298,11 @@ function PrCard({
         {notices.map((notice) => (
           <Pill key={notice.code} tone="warn" title={notice.detail}>
             {notice.pill}
+          </Pill>
+        ))}
+        {cardHints.map((hint) => (
+          <Pill key={hint.code} tone="neutral" title={hint.detail}>
+            {hint.label}
           </Pill>
         ))}
         {triage && triage.status !== "untriaged" ? <Pill tone="accent">{triage.status}</Pill> : null}

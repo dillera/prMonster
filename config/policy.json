@@ -22,7 +22,8 @@
     "layer_violation": 1.5,
     "hot_path_logging": 1,
     "unchecked_allocation": 1.5,
-    "code_quality": 2
+    "code_quality": 2,
+    "body_matches_diff": 1.5
   },
   "hardBlocks": {
     "reviewer_directed_text": 0.7
