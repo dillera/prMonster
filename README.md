@@ -1,30 +1,31 @@
 # prMonster: FujiNet PR Triage Harness
 
 A local dashboard that reads every open pull request on
-[`FujiNetWIFI/fujinet-firmware`](https://github.com/FujiNetWIFI/fujinet-firmware/pulls),
-checks it against the rules in the repo's own `CONTRIBUTING.md`, asks
+[`FujiNetWIFI/fujinet-firmware`](https://github.com/FujiNetWIFI/fujinet-firmware/pulls - or any GH project, but FujinNet is fun to examine),
+checks it against the rules in the repo's own `CONTRIBUTING.md` (if it exists), asks
 [Jev](https://docs.typesafe.ai) (TypeSafe AI's decision model) a fixed set of
 yes/no, pick-one and rate-this questions about the description and the diff,
 and sorts the queue into three piles:
 
+This is biased towards the rules for FujiNet contributions, but it's changable to other rules in the Policy section.
 
 <img width="1523" height="964" alt="Screenshot 2026-09-22 at 12 08 54 PM" src="https://github.com/user-attachments/assets/f79cbd0f-32ff-4fb0-bd8f-987f53dfdebd" />
 
 <img width="507" height="924" alt="Screenshot 2026-09-22 at 12 15 10 PM" src="https://github.com/user-attachments/assets/6acffebc-a501-417c-ae83-c4cf58a7e6d1" />
 
 
-| Pile | What it means for you |
+| Pile | Triaging - what do I do about this PR? |
 |---|---|
 | **READY** | Nothing blocks it, it follows the project rules as far as the checks can tell, and Jev is confident. Worth a fast merge review today. |
 | **NEEDS REVIEW** | Nothing hard blocks it, but something wants a maintainer's judgement: scope, design, a low-confidence answer, a mid score. Read the listed reasons first. |
 | **BLOCKED** | Something the author has to fix before a review is worth your time: draft, merge conflict, red CI, a generated file committed, a `BUILD_*` conditional in a shared device base, or a description that tries to steer automated reviewers. |
 
-It never touches a pull request on its own. See
-[Human in the loop](#human-in-the-loop-always).
+This project isn't about resolving PRs itself- it never touches a pull request on its own. See
+[Human in the loop](#human-in-the-loop-always). It's about triage for a human to wade thru and help figure out where to start.
 
-## Why this is useful to FujiNet maintainers
+## Why every maintainer will love this
 
-The firmware queue has a particular shape that makes eyeball triage expensive:
+The FujiNet firmware queue has a particular quirks that makes triage expensive:
 
 - **CI is build-only.** `autobuild.yml` compiles ten ESP32 targets and runs no
   tests; nothing lints or formats. A green check tells you it compiles, not
