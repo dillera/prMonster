@@ -7,6 +7,12 @@ checks it against the rules in the repo's own `CONTRIBUTING.md`, asks
 yes/no, pick-one and rate-this questions about the description and the diff,
 and sorts the queue into three piles:
 
+
+<img width="1523" height="964" alt="Screenshot 2026-09-22 at 12 08 54 PM" src="https://github.com/user-attachments/assets/f79cbd0f-32ff-4fb0-bd8f-987f53dfdebd" />
+
+<img width="507" height="924" alt="Screenshot 2026-09-22 at 12 15 10 PM" src="https://github.com/user-attachments/assets/6acffebc-a501-417c-ae83-c4cf58a7e6d1" />
+
+
 | Pile | What it means for you |
 |---|---|
 | **READY** | Nothing blocks it, it follows the project rules as far as the checks can tell, and Jev is confident. Worth a fast merge review today. |
