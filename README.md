@@ -371,6 +371,7 @@ recommends one of:
 
 | Recommendation | One-click action | When |
 |---|---|---|
+| **Replied to us** | depends on the reply: close as completed (resolved), a "thanks, keeping it open" comment (still happens), none (anything else) | Someone answered a comment the harness posted. Always listed first, with a callout at the top of the board. |
 | **Close: fixed** | close as completed + comment | A merged PR says `fixes #n`, or Jev reads a linked merged PR or the thread as having fixed it. |
 | **Close: answered** | close as completed + comment | A question or setup problem answered in the thread. |
 | **Close: obsolete** | close as not planned + comment | The files and identifiers it names are gone or moved, and the issue is at least 180 days old and quiet for 90. |
@@ -385,6 +386,15 @@ recommends one of:
 - **Linked work:** from the issue timeline, the PRs that mention or close the issue and the commits that cite it.
 - **Code checks:** every path and identifier the issue names, checked against `origin/master` today. Each one is reported as present, moved or missing, along with how many commits have touched it since the issue opened.
 
+**Replies to our comments.** A comment carrying the harness footer, posted by a
+maintainer, is ours; any later comment by someone else (bots excepted) is a
+reply. The issue gets a deeper pass: three extra Jev questions read the replies
+against what we asked (says resolved, says it still happens, supplies the
+details), and the code checks are repeated from the date of our comment —
+commits to the files the issue names and linked PRs merged since. "Still
+happens" wins over "resolved" when both read high. Analyses are version-stamped, so a normal scan redoes
+anything analysed by older rules.
+
 Jev then gets that evidence with eight questions: type, actionable, resolved in thread, fixed by linked work, superseded by code changes, awaiting reporter, still relevant (0–3), and text aimed at automation. One call per issue; the full backlog of ~90 issues costs under a cent.
 
 **One click, still human.** Each issue shows the recommendation, its
@@ -398,6 +408,12 @@ still:
   "still happens" blocks the close until you re-analyse);
 - refuses and logs everything while `ALLOW_GITHUB_WRITES` is not `1`;
 - records every attempt in the audit log, marked as an issue action.
+
+**Hide handled** (on by default) hides an issue only while *we were the last
+update*: an action posted through the harness, or a local *Keep open* /
+*Snooze* mark, with nothing on GitHub since. Any later activity — a reply, a
+comment, a label someone else added — shows it again. The rule is
+`src/shared/issueHandled.ts`.
 
 *Keep open* and *Snooze* are local marks only. With *auto-advance* on, the next
 unhandled issue opens after each action.

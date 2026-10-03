@@ -22,6 +22,7 @@ import { formatUsd, percent, relativeTime } from "../format";
 import { Markdown } from "./Markdown";
 import { EmptyState, ErrorNote, Pill, Skeleton, Spinner } from "./ui";
 import { readStored } from "./deep/RunPanel";
+import { handledReason } from "../../shared/issueHandled";
 
 const ACTOR_KEY = "prmonster.actor";
 const ADVANCE_KEY = "prmonster.issues.advance";
@@ -29,6 +30,7 @@ const ADVANCE_KEY = "prmonster.issues.advance";
 type RecFilter = IssueRecommendationKind | "unanalysed";
 
 const REC_ORDER: RecFilter[] = [
+  "reply_to_harness",
   "close_fixed",
   "close_obsolete",
   "close_no_response",
@@ -40,6 +42,7 @@ const REC_ORDER: RecFilter[] = [
 ];
 
 const REC_LABEL: Record<RecFilter, string> = {
+  reply_to_harness: "Replied to us",
   close_fixed: "Close: fixed",
   close_obsolete: "Close: obsolete",
   close_no_response: "Close: no response",
@@ -51,6 +54,7 @@ const REC_LABEL: Record<RecFilter, string> = {
 };
 
 const REC_TONE: Record<RecFilter, "neutral" | "good" | "warn" | "bad" | "accent" | "merged"> = {
+  reply_to_harness: "warn",
   close_fixed: "good",
   close_obsolete: "bad",
   close_no_response: "warn",
@@ -79,13 +83,15 @@ function recOf(item: IssueListItem): RecFilter {
   return item.evaluation?.recommendation.kind ?? "unanalysed";
 }
 
-/** Handled = something was posted, or a person marked it kept or snoozed. */
-function handledOf(item: IssueListItem): string | null {
-  if (item.lastAction?.outcome === "posted") return `${ACTION_LABEL[item.lastAction.kind as IssueActionKind] ?? item.lastAction.kind} by ${item.lastAction.confirmedBy}`;
-  if (item.triage?.status === "kept") return `kept open${item.triage.by ? ` by ${item.triage.by}` : ""}`;
-  if (item.triage?.status === "snoozed") return "snoozed";
-  return null;
-}
+const VERDICT_LABEL: Record<string, string> = {
+  resolved: "says resolved",
+  still_happens: "says still happens",
+  info_provided: "gave the details asked for",
+  unclear: "read the reply",
+};
+
+/** Hidden by default only while our action or mark is the latest thing on the issue. */
+const handledOf = handledReason;
 
 function years(iso: string): string {
   return relativeTime(iso).replace(/(\d+)mo ago/, (_, m: string) => {
@@ -264,6 +270,7 @@ export function IssuesView({ selected, health }: { selected: number | null; heal
     });
 
   const handledCount = items.filter((i) => handledOf(i) !== null).length;
+  const reopened = items.filter((i) => handledOf(i) === null && (i.lastAction?.outcome === "posted" || (i.triage !== null && i.triage.status !== "untriaged"))).length;
   const analysed = items.filter((i) => i.evaluation !== null).length;
 
   return (
@@ -272,7 +279,8 @@ export function IssuesView({ selected, health }: { selected: number | null; heal
         <div className="issues__summary">
           <strong className="issues__total mono">{items.length}</strong> open issues
           <span className="issues__meta mono">
-            {analysed} analysed · {handledCount} handled · Jev {formatUsd(board?.estCostUsd ?? 0)}
+            {analysed} analysed · {handledCount} handled (we were the last update)
+            {reopened > 0 ? ` · ${reopened} with activity since we acted` : ""} · Jev {formatUsd(board?.estCostUsd ?? 0)}
           </span>
         </div>
         <label className="issues__actor">
@@ -329,9 +337,23 @@ export function IssuesView({ selected, health }: { selected: number | null; heal
         ))}
         <label className="toggle">
           <input type="checkbox" checked={hideHandled} onChange={(e) => setHideHandled(e.currentTarget.checked)} />
-          <span>hide handled</span>
+          <span title="Hide issues where our action or mark is still the latest update. Any activity after it shows the issue again.">
+            hide handled
+          </span>
         </label>
       </div>
+
+      {counts.reply_to_harness > 0 ? (
+        <div className="issues__callout" role="note">
+          <strong>
+            {counts.reply_to_harness} issue{counts.reply_to_harness === 1 ? " has" : "s have"} a reply to a prMonster comment.
+          </strong>{" "}
+          Someone answered us — review these first.
+          <button type="button" className="btn btn--sm" onClick={() => setFilters(new Set<RecFilter>(["reply_to_harness"]))}>
+            Show only these
+          </button>
+        </div>
+      ) : null}
 
       {error ? <ErrorNote message={error} onRetry={() => window.location.reload()} /> : null}
 
@@ -419,6 +441,11 @@ function IssueCard({
       <div className="prcard__top">
         <span className="prcard__number mono">#{snapshot.number}</span>
         <Pill tone={REC_TONE[rec]}>{REC_LABEL[rec]}</Pill>
+        {evaluation?.recommendation.followupVerdict ? (
+          <Pill tone={evaluation.recommendation.followupVerdict === "resolved" ? "good" : evaluation.recommendation.followupVerdict === "still_happens" ? "bad" : "accent"}>
+            {VERDICT_LABEL[evaluation.recommendation.followupVerdict]}
+          </Pill>
+        ) : null}
         {evaluation ? <span className="mono isscard__conf">{percent(evaluation.recommendation.confidence)}</span> : null}
         {item.stale && evaluation ? <Pill tone="warn" title="New activity since this was analysed">stale</Pill> : null}
         {handled ? <Pill tone="neutral">{handled}</Pill> : null}
@@ -459,6 +486,9 @@ const ANSWER_LABEL: Record<string, string> = {
   awaiting_reporter: "Awaiting reporter",
   still_relevant: "Still relevant",
   automation_directed_text: "Text aimed at automation",
+  followup_says_resolved: "Reply says resolved",
+  followup_says_still_happens: "Reply says still happens",
+  followup_provides_info: "Reply gives what we asked",
 };
 
 function IssueDetail({
@@ -542,6 +572,8 @@ function IssueDetail({
           </div>
         ) : null}
       </header>
+
+      {evaluation?.evidence.followup ? <FollowupPanel item={item} /> : null}
 
       {!evaluation ? (
         <section className="action">
@@ -783,6 +815,48 @@ function Evidence({ item }: { item: IssueListItem }) {
         </>
       ) : null}
       {ev.notes.length > 0 ? <p className="action__none">{ev.notes.join(" · ")}</p> : null}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- follow-up
+function FollowupPanel({ item }: { item: IssueListItem }) {
+  const f = item.evaluation?.evidence.followup;
+  const verdict = item.evaluation?.recommendation.followupVerdict;
+  if (!f) return null;
+  return (
+    <section className="issdetail__section issfollow" aria-label="Replies to our comment">
+      <h3 className="issdetail__h">
+        Replies to our comment{" "}
+        {verdict ? (
+          <Pill tone={verdict === "resolved" ? "good" : verdict === "still_happens" ? "bad" : "accent"}>{VERDICT_LABEL[verdict]}</Pill>
+        ) : null}
+      </h3>
+      <div className="issfollow__ours">
+        <p className="issthread__who mono">
+          <a href={f.commentUrl} target="_blank" rel="noreferrer noopener">
+            our comment
+          </a>{" "}
+          · posted by {f.postedBy} · {relativeTime(f.commentAt)}
+        </p>
+        <Markdown source={f.commentExcerpt} />
+      </div>
+      {f.replies.map((r, i) => (
+        <div key={i} className={`issfollow__reply issfollow__reply--${r.role}`}>
+          <p className="issthread__who mono">
+            <a href={r.url} target="_blank" rel="noreferrer noopener">
+              {r.author}
+            </a>{" "}
+            · {r.role} · {relativeTime(r.at)}
+          </p>
+          <Markdown source={r.body} />
+        </div>
+      ))}
+      <p className="action__none">
+        Since our comment: {f.commitsTouchingRefsSinceComment ?? "?"} commit(s) to the files the issue names,{" "}
+        {f.prsMergedSinceComment} linked pull request(s) merged.
+        {f.reporterReplied ? "" : " The original reporter has not replied."}
+      </p>
     </section>
   );
 }

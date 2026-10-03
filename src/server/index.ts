@@ -697,6 +697,7 @@ app.get("/api/issues", async (c) => {
       stale: issueIsStale(ref.updatedAt, evaluation),
       triage: triage[String(ref.number)] ?? null,
       lastAction: actions.get(ref.number) ?? null,
+      githubUpdatedAt: ref.updatedAt,
     };
   });
   const spend = [...latest.values()].reduce((a, e) => a + e.usage.estCostUsd, 0);

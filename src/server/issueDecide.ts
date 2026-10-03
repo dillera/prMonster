@@ -44,6 +44,7 @@ export const ISSUE_THRESHOLDS = {
 export const STALE_LABEL_CANDIDATES = ["stale", "needs info", "needs-info", "more info needed", "awaiting response"];
 
 const ACTION_FOR: Record<IssueRecommendationKind, IssueActionKind | null> = {
+  reply_to_harness: null, // decided by what the reply says, in followupRecommendation()
   close_fixed: "close_completed",
   close_answered: "close_completed",
   close_obsolete: "close_not_planned",
@@ -54,6 +55,7 @@ const ACTION_FOR: Record<IssueRecommendationKind, IssueActionKind | null> = {
 };
 
 export const RECOMMENDATION_LABEL: Record<IssueRecommendationKind, string> = {
+  reply_to_harness: "Replied to us",
   close_fixed: "Close: fixed",
   close_answered: "Close: answered",
   close_obsolete: "Close: obsolete",
@@ -170,6 +172,90 @@ export function draftBody(
   }
 }
 
+function shortDate(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+/**
+ * Someone answered a comment this harness posted. That always goes to the top
+ * of a human's queue — it is a person talking to us — and the replies decide
+ * the suggested action. "Still happens" wins over "fixed" when both read high:
+ * keeping an issue open by mistake costs a click, closing one on a reporter who
+ * just said it is broken costs their trust.
+ */
+function followupRecommendation(
+  input: RecommendInput,
+  reasons: string[],
+): IssueRecommendation | null {
+  const f = input.evidence.followup;
+  if (!f) return null;
+  const { answers } = input;
+  const resolved = noul(answers, "followup_says_resolved");
+  const still = noul(answers, "followup_says_still_happens");
+  const info = noul(answers, "followup_provides_info");
+  const T = ISSUE_THRESHOLDS;
+
+  let verdict: NonNullable<IssueRecommendation["followupVerdict"]> = "unclear";
+  if (!input.jevError) {
+    if (still !== null && still >= T.yes && (resolved === null || still >= resolved)) verdict = "still_happens";
+    else if (resolved !== null && resolved >= T.yes) verdict = "resolved";
+    else if (info !== null && info >= T.yes) verdict = "info_provided";
+  }
+
+  const who = [...new Set(f.replies.map((r) => `${r.author} (${r.role})`))].join(", ");
+  const last = f.replies.at(-1);
+  const lead = [
+    `${f.replies.length} repl${f.replies.length === 1 ? "y" : "ies"} from ${who} to the comment ${f.postedBy} posted through the harness on ${shortDate(f.commentAt)}`,
+    ...(last ? [`latest reply: "${last.body.replace(/\s+/g, " ").slice(0, 200)}${last.body.length > 200 ? "…" : ""}"`] : []),
+  ];
+  if (!f.reporterReplied) lead.push("the original reporter has not replied; someone else did");
+  if (still !== null) lead.push(`Jev: reply says it still happens ${pct(still)}`);
+  if (resolved !== null) lead.push(`Jev: reply says it is resolved ${pct(resolved)}`);
+  if (info !== null) lead.push(`Jev: reply supplies what was asked ${pct(info)}`);
+  if (f.commitsTouchingRefsSinceComment !== null) {
+    lead.push(`${f.commitsTouchingRefsSinceComment} commit(s) to the files it names since our comment`);
+  }
+  if (f.prsMergedSinceComment > 0) lead.push(`${f.prsMergedSinceComment} linked pull request(s) merged since our comment`);
+  reasons.unshift(...lead);
+
+  const foot = footer(input.model);
+  const base = { kind: "reply_to_harness" as const, reasons, labels: [] as string[], followupVerdict: verdict };
+  switch (verdict) {
+    case "resolved":
+      return {
+        ...base,
+        confidence: resolved ?? 0,
+        headline: "Replied to our comment: says it is resolved",
+        action: "close_completed",
+        body: `Thanks for confirming. Closing as completed. ${REOPEN}${foot}`,
+      };
+    case "still_happens":
+      return {
+        ...base,
+        confidence: still ?? 0,
+        headline: "Replied to our comment: says it still happens",
+        action: "comment",
+        body: `Thanks for confirming this still happens on current firmware — keeping it open.${foot}`,
+      };
+    case "info_provided":
+      return {
+        ...base,
+        confidence: info ?? 0,
+        headline: "Replied to our comment with the details we asked for — read it",
+        action: null,
+        body: "",
+      };
+    default:
+      return {
+        ...base,
+        confidence: 0.5,
+        headline: "Replied to our comment — read the reply",
+        action: null,
+        body: "",
+      };
+  }
+}
+
 export interface RecommendInput {
   snapshot: IssueSnapshot;
   evidence: IssueEvidence;
@@ -234,6 +320,13 @@ export function recommend(input: RecommendInput): IssueRecommendation {
   if (automation !== null && automation >= T.automationBlock) {
     reasons.unshift(`text in the issue appears to address an automated system (${pct(automation)}); read it yourself`);
     return make("needs_human", automation, "The issue text addresses automation — no one-click action is offered");
+  }
+
+  // 0. A person answered us. Nothing below outranks that.
+  const followup = followupRecommendation(input, reasons);
+  if (followup) {
+    if (input.jevError) reasons.unshift(`Jev was unavailable (${input.jevError}); read the reply yourself`);
+    return followup;
   }
 
   if (input.jevError) reasons.unshift(`Jev was unavailable (${input.jevError}); only hard facts were used`);

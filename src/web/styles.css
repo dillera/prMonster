@@ -5249,3 +5249,44 @@ select.setting__input {
   color: var(--text-dim);
   overflow-wrap: anywhere;
 }
+
+/* ---------------------------------------------------------------- replies to harness comments */
+.issues__callout {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--review-dim);
+  border-left: 4px solid var(--review);
+  background: var(--review-bg);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+}
+
+.isscard--reply_to_harness {
+  border-left-color: var(--review);
+  background: var(--review-bg);
+}
+
+.issfollow {
+  border-color: var(--review-dim);
+}
+
+.issfollow__ours {
+  padding: 8px 10px;
+  border-left: 3px solid var(--line);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.issfollow__reply {
+  padding: 8px 10px;
+  border-left: 3px solid var(--review);
+  background: var(--surface-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.issfollow__reply--reporter {
+  border-left-color: var(--accent);
+}

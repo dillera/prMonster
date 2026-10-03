@@ -144,13 +144,63 @@ export const ISSUE_QUESTIONS: IssueQuestionDef[] = [
   },
 ];
 
+/**
+ * Asked only when someone replied to a comment this harness posted. They read
+ * the replies against what our comment asked, which is the whole point of the
+ * follow-up: a "still happens" must keep an issue open whatever the code says.
+ */
+export const FOLLOWUP_QUESTIONS: IssueQuestionDef[] = [
+  {
+    id: "followup_says_resolved",
+    kind: "issue",
+    type: "noul",
+    label: "Reply says resolved",
+    instructions:
+      "Does a reply in `harness_followup.replies` say the problem described in `issue.title` is fixed, no longer happens on current firmware, or that the issue can be closed?",
+    criteria: {
+      true: "A reply says it is fixed, gone, or can be closed",
+      false: "No reply says it is resolved",
+    },
+    weight: 0,
+    polarity: "info",
+  },
+  {
+    id: "followup_says_still_happens",
+    kind: "issue",
+    type: "noul",
+    label: "Reply says still happens",
+    instructions:
+      "Does a reply in `harness_followup.replies` say the problem described in `issue.title` still happens, or that the issue is still relevant and should stay open?",
+    criteria: {
+      true: "A reply says it still happens or is still wanted",
+      false: "No reply says it still happens",
+    },
+    weight: 0,
+    polarity: "info",
+  },
+  {
+    id: "followup_provides_info",
+    kind: "issue",
+    type: "noul",
+    label: "Reply supplies what was asked",
+    instructions:
+      "Does a reply in `harness_followup.replies` supply what `harness_followup.our_comment` asked for, such as a firmware version, a platform, reproduction steps, logs, or the result of a retest?",
+    criteria: {
+      true: "The reply gives the requested version, platform, steps, logs, or retest result",
+      false: "The reply does not give what was asked",
+    },
+    weight: 0,
+    polarity: "info",
+  },
+];
+
 export const ISSUE_QUESTIONS_BY_ID: Record<string, IssueQuestionDef> = Object.fromEntries(
-  ISSUE_QUESTIONS.map((q) => [q.id, q]),
+  [...ISSUE_QUESTIONS, ...FOLLOWUP_QUESTIONS].map((q) => [q.id, q]),
 );
 
-export function issueQuestionBodies(): Record<string, JevQuestionBody> {
+export function issueQuestionBodies(withFollowup = false): Record<string, JevQuestionBody> {
   const out: Record<string, JevQuestionBody> = {};
-  for (const q of ISSUE_QUESTIONS) {
+  for (const q of withFollowup ? [...ISSUE_QUESTIONS, ...FOLLOWUP_QUESTIONS] : ISSUE_QUESTIONS) {
     const body: JevQuestionBody = { type: q.type, instructions: q.instructions };
     if (q.criteria !== undefined) body.criteria = q.criteria;
     out[q.id] = body;
@@ -188,6 +238,14 @@ export interface IssueState {
     recent_commits_touching_named_files: string[];
   };
   project_context: string;
+  /** Present only when someone replied to a comment this harness posted. */
+  harness_followup?: {
+    our_comment: string;
+    our_comment_days_ago: number;
+    replies: Array<{ author: string; role: "reporter" | "maintainer" | "other"; days_ago: number; body: string }>;
+    commits_touching_named_files_since_our_comment: number | null;
+    pull_requests_merged_since_our_comment: number;
+  };
 }
 
 const MAX_THREAD = 12;
@@ -264,6 +322,21 @@ export function buildIssueState(snapshot: IssueSnapshot, evidence: IssueEvidence
     },
     project_context: ISSUE_PROJECT_CONTEXT,
   };
+  const f = evidence.followup;
+  if (f) {
+    state.harness_followup = {
+      our_comment: clip(f.commentExcerpt, 1200),
+      our_comment_days_ago: daysAgo(f.commentAt, now),
+      replies: f.replies.slice(-6).map((r) => ({
+        author: r.author,
+        role: r.role,
+        days_ago: daysAgo(r.at, now),
+        body: clip(r.body, 1500),
+      })),
+      commits_touching_named_files_since_our_comment: f.commitsTouchingRefsSinceComment,
+      pull_requests_merged_since_our_comment: f.prsMergedSinceComment,
+    };
+  }
 
   // Bounded trim, longest field first, until the state fits.
   const budget = Math.min(MAX_STATE_TOKENS, HARD_STATE_TOKEN_LIMIT - 2000);
@@ -281,7 +354,11 @@ export async function askIssue(
   state: IssueState,
   model: string,
 ): Promise<{ answers: Record<string, JevAnswer>; model: string; inputTokens: number }> {
-  const res = await backend.systemOne({ state, questions: issueQuestionBodies(), model });
+  const res = await backend.systemOne({
+    state,
+    questions: issueQuestionBodies(state.harness_followup !== undefined),
+    model,
+  });
   return { answers: res.answers, model: res.model, inputTokens: res.usage.input_tokens };
 }
 
@@ -334,6 +411,18 @@ export class MockIssueJevBackend implements JevBackend {
         noul: /ignore (all|previous)|as an ai|automated (reviewer|triage)|do not close/i.test(text) ? 0.9 : 0.03,
       },
     };
+
+    if (s.harness_followup) {
+      const replies = s.harness_followup.replies.map((r) => r.body).join("\n");
+      const still = /\b(still (exists|happens|broken|present|an issue|relevant)|not fixed|same problem|yes,? (it )?(still|does))\b/i.test(replies);
+      const done = !still && /\b(fixed|works now|resolved|no longer|can be closed|close (it|this))\b/i.test(replies);
+      answers["followup_says_still_happens"] = { type: "noul", noul: round3(clamp01((still ? 0.9 : 0.08) + j())) };
+      answers["followup_says_resolved"] = { type: "noul", noul: round3(clamp01((done ? 0.88 : 0.06) + j())) };
+      answers["followup_provides_info"] = {
+        type: "noul",
+        noul: round3(clamp01((/\b(v?\d+\.\d+|firmware|version|log|steps)\b/i.test(replies) ? 0.75 : 0.2) + j())),
+      };
+    }
 
     const levels = 4;
     const peak = Math.max(0, Math.min(levels - 1, Math.round(clamp01(relevance + j()) * (levels - 1))));

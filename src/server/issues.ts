@@ -31,6 +31,18 @@ export const ISSUE_TRIAGE_PATH = resolve(DATA_DIR, "issue-triage.json");
 
 const MAX_EVALUATIONS_PER_ISSUE = 5;
 
+/**
+ * Bump when the evidence, the questions or the rules change in a way an old
+ * analysis would miss. A normal scan then redoes those issues even though
+ * nothing moved on GitHub. 2: replies to harness comments (reply_to_harness).
+ */
+export const ISSUE_ANALYSIS_VERSION = 2;
+
+/** Stale on GitHub, or analysed by rules older than the current ones. */
+export function issueNeedsAnalysis(updatedAt: string, evaluation: IssueEvaluation | null): boolean {
+  return issueIsStale(updatedAt, evaluation) || (evaluation?.analysisVersion ?? 1) < ISSUE_ANALYSIS_VERSION;
+}
+
 // --- storage ----------------------------------------------------------------
 
 export function readIssueEvaluations(): IssueEvaluation[] {
@@ -172,6 +184,7 @@ export async function evaluateIssue(
     recommendation,
     usage: { input_tokens: inputTokens, calls, estCostUsd: Number(estCostUsd(inputTokens).toFixed(6)) },
     durationMs: Date.now() - started,
+    analysisVersion: ISSUE_ANALYSIS_VERSION,
     ...(error ? { error } : {}),
   };
   appendIssueEvaluation(evaluation);
@@ -231,7 +244,7 @@ export function startIssueScan(opts: { force?: boolean; numbers?: number[] } = {
       job.current = ref.number;
       try {
         const existing = latest.get(ref.number) ?? null;
-        if (!opts.force && existing && !issueIsStale(ref.updatedAt, existing)) {
+        if (!opts.force && existing && !issueNeedsAnalysis(ref.updatedAt, existing)) {
           stage(ref.number, "decide", "unchanged since last analysis — skipped");
           emit({ type: "issue:done", n: ref.number, evaluation: existing });
         } else {

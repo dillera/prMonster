@@ -135,9 +135,20 @@ export interface IssueEvidence {
   commitsSinceOpened: number | null; commitsTouchingRefsSinceOpened: number | null;
   recentTouchingCommits: Array<{ sha: string; date: string; subject: string }>;
   baseSha: string | null; git: boolean; notes: string[];
+  /** Set when a comment this harness posted has had replies since. Absent on analyses made before this existed. */
+  followup?: HarnessFollowup | null;
+}
+/** A comment the harness posted on the issue, and what people said after it. */
+export interface HarnessFollowup {
+  commentAt: string; commentUrl: string; postedBy: string; commentExcerpt: string;
+  replies: Array<{ author: string; role: "reporter" | "maintainer" | "other"; at: string; url: string; body: string }>;
+  reporterReplied: boolean; lastReplyAt: string;
+  /** The deeper pass: what moved in the code and in linked work since our comment. */
+  commitsTouchingRefsSinceComment: number | null; prsMergedSinceComment: number;
 }
 export type IssueActionKind = "close_completed" | "close_not_planned" | "comment" | "labels";
 export type IssueRecommendationKind =
+  | "reply_to_harness"     // someone answered a comment this harness posted: top of the queue
   | "close_fixed"          // a merged PR or the thread says it is done
   | "close_obsolete"       // the code it describes has gone or been rewritten
   | "close_no_response"    // a maintainer asked; the reporter never came back
@@ -149,14 +160,19 @@ export interface IssueRecommendation {
   kind: IssueRecommendationKind; confidence: number; headline: string; reasons: string[];
   /** The one-click action this maps to, plus a drafted comment (template text, no model prose). */
   action: IssueActionKind | null; body: string; labels: string[];
+  /** Only on reply_to_harness: what the replies say. */
+  followupVerdict?: "resolved" | "still_happens" | "info_provided" | "unclear";
 }
 export interface IssueEvaluation {
   id: string; issueNumber: number; issueUpdatedAt: string; evaluatedAt: string; mock: boolean; model: string;
   evidence: IssueEvidence; answers: Record<string, JevAnswer>; recommendation: IssueRecommendation;
   usage: { input_tokens: number; calls: number; estCostUsd: number }; durationMs: number; error?: string;
+  /** Which analysis rules produced this; a scan redoes anything older than ISSUE_ANALYSIS_VERSION. */
+  analysisVersion?: number;
 }
 export interface IssueTriageState { issueNumber: number; status: "untriaged" | "kept" | "snoozed"; updatedAt: string; by?: string; }
-export interface IssueListItem { snapshot: IssueSnapshot; evaluation: IssueEvaluation | null; stale: boolean; triage: IssueTriageState | null; lastAction: ActionRecord | null; }
+/** `githubUpdatedAt` is the issue's updated_at from the live listing; the stored snapshot can be older. */
+export interface IssueListItem { snapshot: IssueSnapshot; evaluation: IssueEvaluation | null; stale: boolean; triage: IssueTriageState | null; lastAction: ActionRecord | null; githubUpdatedAt?: string; }
 export type IssueScanEvent =
   | { type: "issues:start"; jobId: string; total: number }
   | { type: "issue:stage"; n: number; stage: "fetch" | "evidence" | "jev" | "decide"; detail?: string }

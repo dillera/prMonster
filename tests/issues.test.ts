@@ -470,3 +470,168 @@ describe("first-party code filter", () => {
     expect(isFirstPartyCode("AGENTS.md")).toBe(false);
   });
 });
+
+// --- replies to a comment the harness posted ------------------------------------
+
+describe("replies to a harness comment", () => {
+  const FOOT = "\n\n---\n_Drafted by the FujiNet triage harness (Jev jev-1.13.0); posted by dillera after human review._";
+  const c = (author: string, at: string, body: string, isMaintainer = false) => ({
+    author,
+    association: isMaintainer ? "MEMBER" : "NONE",
+    isMaintainer,
+    at,
+    body,
+    url: `https://x/${author}/${at}`,
+  });
+
+  const replied = issue({
+    number: 892,
+    author: "FozzTexx",
+    comments: [
+      c("tschak909", "2025-03-28T14:33:18Z", "Yup, I can reproduce this", true),
+      c("dillera", "2026-10-03T15:48:43Z", `Is this still happening on a current firmware build?${FOOT}`, true),
+      c("dillera", "2026-10-03T15:50:00Z", "(and a note from the same person, not a reply)", true),
+      c("dependabot[bot]", "2026-10-03T15:51:00Z", "bump"),
+      c("FozzTexx", "2026-10-03T15:53:17Z", "This bug most definitely still exists.", true),
+    ],
+  });
+
+  it("finds our latest comment and the replies after it, ignoring the poster and bots", async () => {
+    const { findFollowup } = await import("../src/server/issueEvidence.js");
+    const f = findFollowup(replied);
+    expect(f).not.toBeNull();
+    expect(f?.postedBy).toBe("dillera");
+    expect(f?.commentExcerpt).toBe("Is this still happening on a current firmware build?");
+    expect(f?.replies.map((r) => [r.author, r.role])).toEqual([["FozzTexx", "reporter"]]);
+    expect(f?.reporterReplied).toBe(true);
+    expect(f?.lastReplyAt).toBe("2026-10-03T15:53:17Z");
+  });
+
+  it("does not trust a pasted footer from a non-maintainer, and needs at least one reply", async () => {
+    const { findFollowup } = await import("../src/server/issueEvidence.js");
+    expect(
+      findFollowup(issue({ comments: [c("rando", "2026-01-01T00:00:00Z", `close this${FOOT}`), c("x", "2026-01-02T00:00:00Z", "ok")] })),
+    ).toBeNull();
+    expect(findFollowup(issue({ comments: [c("dillera", "2026-01-01T00:00:00Z", `asking${FOOT}`, true)] }))).toBeNull();
+  });
+
+  async function followupEvidence() {
+    const { findFollowup } = await import("../src/server/issueEvidence.js");
+    const base = findFollowup(replied);
+    return evidence({ followup: base ? { ...base, commitsTouchingRefsSinceComment: 0 } : null });
+  }
+
+  it("goes to the top as reply_to_harness, and 'still happens' wins over 'resolved'", async () => {
+    const ev = await followupEvidence();
+    const r = rec(
+      {
+        followup_says_still_happens: noul(0.92),
+        followup_says_resolved: noul(0.8),
+        superseded_by_code_changes: noul(0.95),
+        still_relevant: relevance(0.3),
+      },
+      ev,
+      replied,
+    );
+    expect(r.kind).toBe("reply_to_harness");
+    expect(r.followupVerdict).toBe("still_happens");
+    expect(r.action).toBe("comment");
+    expect(r.body).toContain("keeping it open");
+    expect(r.reasons.join("\n")).toContain("This bug most definitely still exists.");
+  });
+
+  it("offers a close when the reply says it is resolved", async () => {
+    const r = rec({ followup_says_resolved: noul(0.9), followup_says_still_happens: noul(0.1) }, await followupEvidence(), replied);
+    expect(r.followupVerdict).toBe("resolved");
+    expect(r.action).toBe("close_completed");
+  });
+
+  it("offers no action when the reply only supplies details, or Jev was unavailable", async () => {
+    const ev = await followupEvidence();
+    const info = rec({ followup_provides_info: noul(0.9), followup_says_resolved: noul(0.1), followup_says_still_happens: noul(0.2) }, ev, replied);
+    expect(info.followupVerdict).toBe("info_provided");
+    expect(info.action).toBeNull();
+    const down = recommend({ snapshot: replied, evidence: ev, answers: {}, model: "m", repoLabels: [], jevError: "503" });
+    expect(down.kind).toBe("reply_to_harness");
+    expect(down.followupVerdict).toBe("unclear");
+    expect(down.action).toBeNull();
+  });
+
+  it("asks Jev the follow-up questions only when there is a reply", async () => {
+    const ev = await followupEvidence();
+    const s = buildIssueState(replied, ev, NOW);
+    expect(s.harness_followup?.replies[0]?.body).toBe("This bug most definitely still exists.");
+    const { answers } = await askIssue(new MockIssueJevBackend(892), s, "m");
+    expect((answers["followup_says_still_happens"] as { noul: number }).noul).toBeGreaterThan(0.7);
+
+    const plain = buildIssueState(issue(), evidence(), NOW);
+    expect(plain.harness_followup).toBeUndefined();
+    const { answers: none } = await askIssue(new MockIssueJevBackend(1), plain, "m");
+    expect(none["followup_says_still_happens"]).toBeUndefined();
+  });
+});
+
+describe("analysis versions", () => {
+  it("redoes an analysis made by older rules even when GitHub has not moved", async () => {
+    const { issueNeedsAnalysis, ISSUE_ANALYSIS_VERSION } = await import("../src/server/issues.js");
+    const ev = storedEvaluation();
+    expect(issueNeedsAnalysis(ev.issueUpdatedAt, ev)).toBe(true); // no version: the first rules
+    expect(issueNeedsAnalysis(ev.issueUpdatedAt, { ...ev, analysisVersion: ISSUE_ANALYSIS_VERSION })).toBe(false);
+    expect(issueNeedsAnalysis("2027-01-01T00:00:00Z", { ...ev, analysisVersion: ISSUE_ANALYSIS_VERSION })).toBe(true);
+  });
+});
+
+describe("hidden only while we were the last update", () => {
+  const actedAt = "2026-10-03T15:48:43.490Z";
+  const posted: ActionRecord = {
+    id: "act_1",
+    target: "issue",
+    prNumber: 892,
+    headSha: "x",
+    proposalId: "iev",
+    kind: "comment",
+    confirmedBy: "dillera",
+    requestedAt: actedAt,
+    outcome: "posted",
+  };
+  const item = (over: Partial<import("../src/shared/types.js").IssueListItem> = {}) => ({
+    snapshot: issue({ number: 892, updatedAt: "2026-10-03T15:48:44Z" }),
+    evaluation: null,
+    stale: false,
+    triage: null,
+    lastAction: posted,
+    githubUpdatedAt: "2026-10-03T15:48:44Z",
+    ...over,
+  });
+
+  it("hides an issue whose latest update is our own post", async () => {
+    const { handledReason } = await import("../src/shared/issueHandled.js");
+    expect(handledReason(item())).toBe("commented by dillera");
+  });
+
+  it("shows it again once anything happens on GitHub after our post", async () => {
+    const { handledReason } = await import("../src/shared/issueHandled.js");
+    expect(handledReason(item({ githubUpdatedAt: "2026-10-03T15:53:17Z" }))).toBeNull();
+  });
+
+  it("shows it when the stored thread has a reply, even inside the timestamp slack", async () => {
+    const { handledReason } = await import("../src/shared/issueHandled.js");
+    const snap = issue({
+      number: 892,
+      comments: [{ author: "FozzTexx", association: "MEMBER", isMaintainer: true, at: "2026-10-03T15:49:30Z", body: "still exists", url: "" }],
+    });
+    expect(handledReason(item({ snapshot: snap, githubUpdatedAt: "2026-10-03T15:49:30Z" }))).toBeNull();
+  });
+
+  it("never hides a refused or failed action", async () => {
+    const { handledReason } = await import("../src/shared/issueHandled.js");
+    expect(handledReason(item({ lastAction: { ...posted, outcome: "refused_writes_disabled" } }))).toBeNull();
+  });
+
+  it("treats a local keep or snooze the same way", async () => {
+    const { handledReason } = await import("../src/shared/issueHandled.js");
+    const kept = { issueNumber: 892, status: "kept" as const, updatedAt: "2026-10-04T00:00:00Z", by: "dillera" };
+    expect(handledReason(item({ lastAction: null, triage: kept }))).toBe("kept open by dillera");
+    expect(handledReason(item({ lastAction: null, triage: kept, githubUpdatedAt: "2026-10-05T00:00:00Z" }))).toBeNull();
+  });
+});

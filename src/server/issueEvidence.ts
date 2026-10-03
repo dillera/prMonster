@@ -12,7 +12,7 @@
 // been deleted or rewritten forty times. Git is best-effort — without a clone
 // the code half is marked unchecked and everything else still works.
 
-import type { CodeRef, IssueEvidence, IssueSnapshot } from "../shared/types.js";
+import type { CodeRef, HarnessFollowup, IssueEvidence, IssueSnapshot } from "../shared/types.js";
 import { codeTokens } from "./dossier.js";
 import {
   countSince,
@@ -160,6 +160,57 @@ export function threadEvidence(snapshot: IssueSnapshot, now = Date.now()): Omit<
   };
 }
 
+/** The signature every comment this harness drafts ends with (proposals.ts and issueDecide.ts). */
+export const HARNESS_FOOTER_RE = /_Drafted by the FujiNet (?:PR )?triage harness\b/;
+
+/**
+ * The latest comment this harness posted, and every reply after it.
+ *
+ * The footer alone is not proof — anyone can paste it — so the comment must
+ * also come from a maintainer, which is the only kind of account that can post
+ * through the confirmed-action routes on this repository anyway. Replies are
+ * comments after it by anyone but the person who posted it, minus bots.
+ */
+export function findFollowup(snapshot: IssueSnapshot): Omit<HarnessFollowup, "commitsTouchingRefsSinceComment"> | null {
+  const comments = snapshot.comments;
+  let idx = -1;
+  for (let i = comments.length - 1; i >= 0; i--) {
+    const c = comments[i];
+    if (c && c.isMaintainer && HARNESS_FOOTER_RE.test(c.body)) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx === -1) return null;
+  const ours = comments[idx];
+  if (!ours) return null;
+  const replies = comments
+    .slice(idx + 1)
+    .filter((c) => c.author !== ours.author && !/\[bot\]$/i.test(c.author) && c.body.trim() !== "")
+    .map((c) => ({
+      author: c.author,
+      role: (c.author === snapshot.author ? "reporter" : c.isMaintainer ? "maintainer" : "other") as
+        | "reporter"
+        | "maintainer"
+        | "other",
+      at: c.at,
+      url: c.url,
+      body: c.body.slice(0, 4000),
+    }));
+  if (replies.length === 0) return null;
+  const since = Date.parse(ours.at);
+  return {
+    commentAt: ours.at,
+    commentUrl: ours.url,
+    postedBy: ours.author,
+    commentExcerpt: ours.body.split(/\n\n---\n/)[0]?.slice(0, 1200) ?? "",
+    replies,
+    reporterReplied: replies.some((r) => r.role === "reporter"),
+    lastReplyAt: replies.at(-1)?.at ?? ours.at,
+    prsMergedSinceComment: snapshot.linkedPrs.filter((p) => p.mergedAt !== null && Date.parse(p.mergedAt) >= since).length,
+  };
+}
+
 let repoPrepared: Promise<string | null> | null = null;
 let preparedAt = 0;
 const REFETCH_MS = 10 * 60_000;
@@ -197,6 +248,7 @@ export async function buildIssueEvidence(
   const notes: string[] = [];
   const text = issueText(snapshot);
   const symbols = extractSymbols(text);
+  const followupBase = findFollowup(snapshot);
 
   const unchecked = (paths: string[]): IssueEvidence => ({
     ...base,
@@ -212,6 +264,7 @@ export async function buildIssueEvidence(
     baseSha: null,
     git: false,
     notes,
+    followup: followupBase ? { ...followupBase, commitsTouchingRefsSinceComment: null } : null,
   });
 
   if (opts.git === false) {
@@ -277,6 +330,21 @@ export async function buildIssueEvidence(
     notes.push(`history since the issue opened is unavailable: ${(err as Error).message.slice(0, 120)}`);
   }
 
+  // The deeper pass for a reply to our comment: has the code it names moved
+  // since we asked? A fix landing in between is the likeliest reason for "works now".
+  let followup: HarnessFollowup | null = null;
+  if (followupBase) {
+    let touchedSince: number | null = null;
+    if (touchedPaths.length > 0) {
+      try {
+        touchedSince = (await logSince(sha, followupBase.commentAt, touchedPaths, 500)).length;
+      } catch (err) {
+        notes.push(`history since our comment is unavailable: ${(err as Error).message.slice(0, 120)}`);
+      }
+    }
+    followup = { ...followupBase, commitsTouchingRefsSinceComment: touchedSince };
+  }
+
   const checked = refs.filter((r) => r.status !== "unchecked");
   return {
     ...base,
@@ -289,5 +357,6 @@ export async function buildIssueEvidence(
     baseSha: sha,
     git: true,
     notes,
+    followup,
   };
 }
