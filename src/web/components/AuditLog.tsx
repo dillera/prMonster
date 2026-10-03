@@ -2,16 +2,18 @@
 
 import { useState } from "react";
 
-import type { ActionKind, ActionRecord } from "../../shared/types";
+import type { ActionKind, ActionRecord, IssueActionKind } from "../../shared/types";
 import { relativeTime, shortSha } from "../format";
 import { Markdown } from "./Markdown";
 import { EmptyState, ErrorNote, Pill, Skeleton } from "./ui";
 
-const KIND_LABEL: Record<ActionKind, string> = {
+const KIND_LABEL: Record<ActionKind | IssueActionKind, string> = {
   comment: "Comment",
   review_request_changes: "Review: request changes",
   review_approve: "Review: approve",
   labels: "Labels",
+  close_completed: "Close issue: completed",
+  close_not_planned: "Close issue: not planned",
 };
 
 const OUTCOME_TEXT: Record<ActionRecord["outcome"], string> = {
@@ -107,16 +109,20 @@ function AuditRow({ record }: { record: ActionRecord }) {
   return (
     <li className={`auditrow auditrow--${refused ? "refused" : "posted"}`}>
       <div className="auditrow__head">
-        <a className="auditrow__pr mono" href={`#/pr/${record.prNumber}`}>
-          #{record.prNumber}
+        <a
+          className="auditrow__pr mono"
+          href={record.target === "issue" ? `#/issue/${record.prNumber}` : `#/pr/${record.prNumber}`}
+          title={record.target === "issue" ? "Issue" : "Pull request"}
+        >
+          {record.target === "issue" ? "issue " : ""}#{record.prNumber}
         </a>
         <span className="auditrow__kind">{KIND_LABEL[record.kind]}</span>
         <Pill tone={refused ? (record.outcome === "failed" ? "bad" : "warn") : "good"}>
           {OUTCOME_TEXT[record.outcome]}
         </Pill>
         <span className="auditrow__by mono">by {record.confirmedBy}</span>
-        <span className="auditrow__sha mono" title={record.headSha}>
-          {shortSha(record.headSha)}
+        <span className="auditrow__sha mono" title={record.target === "issue" ? `issue updated ${record.headSha}` : record.headSha}>
+          {record.target === "issue" ? "" : shortSha(record.headSha)}
         </span>
         <span className="auditrow__when mono" title={new Date(record.requestedAt).toLocaleString()}>
           {relativeTime(record.requestedAt)}

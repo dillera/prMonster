@@ -8,11 +8,11 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "concurrently -k -n server,web -c blue,magenta \"tsx watch src/server/index.ts\" \"vite\"",
-    "dev:server": "tsx watch src/server/index.ts",
+    "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev:server\" \"vite\"",
+    "dev:server": "node scripts/supervise.mjs --watch src/server,src/shared -- tsx src/server/index.ts",
     "dev:web": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "start": "node dist/server/server/index.js",
+    "start": "node scripts/supervise.mjs -- node dist/server/server/index.js",
     "scan": "tsx src/server/cli.ts scan",
     "eval": "tsx src/server/cli.ts eval",
     "test": "vitest run",

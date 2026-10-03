@@ -1,13 +1,13 @@
 // In-memory SSE broadcaster for scan progress (DESIGN.md §5 /api/events).
 
-import type { DeepEvent, ScanEvent } from "../shared/types.js";
+import type { DeepEvent, IssueScanEvent, ScanEvent } from "../shared/types.js";
 
 /**
  * Everything the broadcaster carries. Deep-analysis events ride the same
  * /api/events stream as scan events (DESIGN-deep.md routes table), so the UI
  * needs one connection.
  */
-export type BroadcastEvent = ScanEvent | DeepEvent;
+export type BroadcastEvent = ScanEvent | DeepEvent | IssueScanEvent;
 
 type Subscriber = (event: BroadcastEvent) => void;
 
@@ -32,6 +32,15 @@ const deepInFlight = new Map<string, DeepEvent[]>();
 let lastDeepDone: DeepEvent | null = null;
 const DEEP_RUN_LIMIT = 200;
 
+/** Issue scans get the same treatment as PR scans, in a bucket of their own. */
+const issueRecent: IssueScanEvent[] = [];
+let issueJobId: string | null = null;
+let lastIssueDone: IssueScanEvent | null = null;
+
+function isIssueEvent(event: BroadcastEvent): event is IssueScanEvent {
+  return event.type.startsWith("issue");
+}
+
 export function subscribe(fn: Subscriber): () => void {
   subscribers.add(fn);
   return () => {
@@ -40,7 +49,19 @@ export function subscribe(fn: Subscriber): () => void {
 }
 
 export function emit(event: BroadcastEvent): void {
-  if (event.type.startsWith("deep:")) {
+  if (isIssueEvent(event)) {
+    if (event.type === "issues:start") {
+      issueRecent.length = 0;
+      issueJobId = event.jobId;
+      lastIssueDone = null;
+    }
+    issueRecent.push(event);
+    if (issueRecent.length > RECENT_LIMIT) issueRecent.shift();
+    if (event.type === "issues:done") {
+      issueJobId = null;
+      lastIssueDone = event;
+    }
+  } else if (event.type.startsWith("deep:")) {
     const deep = event as DeepEvent;
     if (deep.type === "deep:start") deepInFlight.set(deep.runId, [deep]);
     else {
@@ -85,7 +106,8 @@ export function recentEvents(): BroadcastEvent[] {
   const scan = currentJobId !== null ? [...recent] : lastDone ? [lastDone] : [];
   const deep: BroadcastEvent[] = [...deepInFlight.values()].flat();
   if (deep.length === 0 && lastDeepDone) deep.push(lastDeepDone);
-  return [...scan, ...deep];
+  const issues: BroadcastEvent[] = issueJobId !== null ? [...issueRecent] : lastIssueDone ? [lastIssueDone] : [];
+  return [...scan, ...deep, ...issues];
 }
 
 /** Test seam. */
@@ -95,6 +117,9 @@ export function resetEvents(): void {
   lastDone = null;
   deepInFlight.clear();
   lastDeepDone = null;
+  issueRecent.length = 0;
+  issueJobId = null;
+  lastIssueDone = null;
 }
 
 export function subscriberCount(): number {

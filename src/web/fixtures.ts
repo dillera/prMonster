@@ -32,6 +32,9 @@ export interface HealthInfo {
   repo: string;
   githubAuth: "token" | "gh" | "anon";
   writesEnabled?: boolean;
+  pid?: number;
+  startedAt?: string;
+  supervised?: boolean;
 }
 
 export interface StatsSummary {
@@ -47,7 +50,10 @@ export const FIXTURE_HEALTH: HealthInfo = {
   "model": "jev-1.13.0",
   "repo": "FujiNetWIFI/fujinet-firmware",
   "githubAuth": "gh",
-  "writesEnabled": false
+  "writesEnabled": false,
+  "pid": 4242,
+  "startedAt": "2026-10-03T12:00:00.000Z",
+  "supervised": true
 };
 
 export const FIXTURE_POLICY: Policy = {

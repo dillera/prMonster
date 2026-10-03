@@ -36,7 +36,7 @@ export function Header({
           FN
         </span>
         <div className="header__titles">
-          <h1 className="header__title">PR Triage</h1>
+          <h1 className="header__title">{route === "issues" || route === "issue" ? "Issue Triage" : "PR Triage"}</h1>
           <a
             className="header__repo mono"
             href={`https://github.com/${repo}`}
@@ -51,6 +51,9 @@ export function Header({
       <nav className="header__nav" aria-label="Views">
         <a className={`navlink${route === "list" || route === "pr" ? " navlink--on" : ""}`} href="#/">
           Board
+        </a>
+        <a className={`navlink${route === "issues" || route === "issue" ? " navlink--on" : ""}`} href="#/issues">
+          Issues
         </a>
         <a className={`navlink${route === "audit" ? " navlink--on" : ""}`} href="#/audit">
           Audit log
@@ -69,6 +72,13 @@ export function Header({
             <Pill tone={health.jev === "live" ? "good" : "warn"} title="Jev decision model status">
               <span className="mono">{health.jev === "live" ? `live ${health.model}` : `mock ${health.model}`}</span>
             </Pill>
+            {health.writesEnabled !== undefined ? (
+              <a href="#/admin" className="header__pilllink" title="ALLOW_GITHUB_WRITES — change it on the Admin page">
+                <Pill tone={health.writesEnabled ? "bad" : "neutral"}>
+                  <span className="mono">{health.writesEnabled ? "github writes: ON" : "github writes: off"}</span>
+                </Pill>
+              </a>
+            ) : null}
             <Pill tone={health.githubAuth === "anon" ? "warn" : "neutral"} title="GitHub authentication">
               <span className="mono">github: {health.githubAuth}</span>
             </Pill>
@@ -85,6 +95,7 @@ export function Header({
         ) : null}
       </div>
 
+      {route === "issues" || route === "issue" ? null : (
       <div className="header__scan">
         <div className="header__meta">
           <span className="header__metaitem">
@@ -107,6 +118,7 @@ export function Header({
           {busy ? <Spinner label="Scanning" /> : "Scan open PRs"}
         </button>
       </div>
+      )}
 
       {scanError ? (
         <p className="header__error" role="alert">

@@ -290,7 +290,7 @@ function ActionOutcome({ record }: { record: ActionRecord }) {
       <span className="outcome__text">
         {record.outcome === "posted" ? (
           <>
-            Posted as {KIND_LABEL[record.kind].toLowerCase()}.{" "}
+            Posted as {(KIND_LABEL[record.kind as ActionKind] ?? record.kind).toLowerCase()}.{" "}
             {record.githubUrl ? (
               <a href={record.githubUrl} target="_blank" rel="noreferrer noopener">
                 Open on GitHub

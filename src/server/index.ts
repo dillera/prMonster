@@ -11,16 +11,28 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 
-import type { ActionKind, ActionRecord, Evaluation, PrListItem, PrSnapshot } from "../shared/types.js";
+import type {
+  ActionKind,
+  ActionRecord,
+  Evaluation,
+  IssueActionKind,
+  IssueListItem,
+  IssueSnapshot,
+  PrListItem,
+  PrSnapshot,
+} from "../shared/types.js";
 import { decide } from "./decide.js";
-import { abortRun, beginDeepRun, readRuns as readDeepRuns, runById, runningFor, runsFor, spendToday } from "./deep.js";
+import { abortRun, anyDeepRunning, beginDeepRun, readRuns as readDeepRuns, runById, runningFor, runsFor, spendToday } from "./deep.js";
 import { buildDossier } from "./dossier.js";
 import { recentEvents, sseFrame, subscribe } from "./events.js";
 import { sizeBucketFromGates } from "./gates.js";
 import {
   addLabels,
   cachedSnapshot,
+  closeIssue,
   createIssueComment,
+  getIssueState,
+  listOpenIssues,
   createReview,
   fetchSnapshot,
   githubAuthMode,
@@ -29,6 +41,19 @@ import {
   listRepoLabels,
   writesEnabled,
 } from "./github.js";
+import {
+  evaluateIssue,
+  getIssueJob,
+  IssueScanInProgressError,
+  issueIsStale,
+  latestIssueEvaluation,
+  latestIssueEvaluations,
+  readIssueSnapshots,
+  readIssueTriage,
+  runningIssueScan,
+  setIssueTriage,
+  startIssueScan,
+} from "./issues.js";
 import { mapWithConcurrency } from "./jev.js";
 import { configuredModel, dailyCapUsd, listModels, openRouterKey } from "./llm.js";
 import { MOCK_MODEL } from "./mock.js";
@@ -71,6 +96,16 @@ const webDist = resolve(PROJECT_ROOT, "dist/web");
 
 export const app = new Hono();
 
+const STARTED_AT = new Date().toISOString();
+/** Exit code scripts/supervise.mjs reads as "start me again". */
+export const RESTART_EXIT_CODE = 75;
+/** Test seam: the restart route must never end the test runner's process. */
+export const restartHooks = { exit: (code: number): void => void process.exit(code), delayMs: 250 };
+
+export function supervised(): boolean {
+  return process.env["PRMONSTER_SUPERVISED"] === "1";
+}
+
 ensureDataDir();
 
 // --- health -----------------------------------------------------------------
@@ -85,6 +120,9 @@ app.get("/api/health", (c) => {
     repo: githubRepo().full,
     githubAuth: githubAuthMode(),
     writesEnabled: writesEnabled(),
+    pid: process.pid,
+    startedAt: STARTED_AT,
+    supervised: supervised(),
   });
 });
 
@@ -599,6 +637,263 @@ app.post("/api/prs/:n/evaluate", async (c) => {
   }
 });
 
+// --- open issues --------------------------------------------------------------
+//
+// Same shape as the PR side: analysis is free to run, every write is one
+// human click that names the person, re-checks GitHub, and lands in the audit
+// log whatever happens. Nothing here ever reopens, edits or deletes.
+
+function placeholderIssue(ref: { number: number; title: string; updatedAt: string }): IssueSnapshot {
+  const { full } = githubRepo();
+  return {
+    number: ref.number,
+    title: ref.title,
+    body: "",
+    author: "unknown",
+    authorAssociation: "NONE",
+    url: `https://github.com/${full}/issues/${ref.number}`,
+    state: "open",
+    stateReason: null,
+    createdAt: ref.updatedAt,
+    updatedAt: ref.updatedAt,
+    closedAt: null,
+    labels: [],
+    assignees: [],
+    reactions: 0,
+    comments: [],
+    linkedPrs: [],
+    referencingCommits: [],
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+function lastIssueActions(): Map<number, ActionRecord> {
+  const out = new Map<number, ActionRecord>();
+  for (const a of readActions()) {
+    if (a.target !== "issue") continue;
+    const cur = out.get(a.prNumber);
+    if (!cur || cur.requestedAt < a.requestedAt) out.set(a.prNumber, a);
+  }
+  return out;
+}
+
+app.get("/api/issues", async (c) => {
+  let refs;
+  try {
+    refs = await listOpenIssues();
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+  const latest = latestIssueEvaluations();
+  const snapshots = readIssueSnapshots();
+  const triage = readIssueTriage();
+  const actions = lastIssueActions();
+  const items: IssueListItem[] = refs.map((ref) => {
+    const evaluation = latest.get(ref.number) ?? null;
+    const stored = snapshots[String(ref.number)];
+    return {
+      snapshot: stored ?? placeholderIssue(ref),
+      evaluation,
+      stale: issueIsStale(ref.updatedAt, evaluation),
+      triage: triage[String(ref.number)] ?? null,
+      lastAction: actions.get(ref.number) ?? null,
+    };
+  });
+  const spend = [...latest.values()].reduce((a, e) => a + e.usage.estCostUsd, 0);
+  return c.json({ items, running: runningIssueScan(), estCostUsd: Number(spend.toFixed(6)) });
+});
+
+app.post("/api/issues/scan", async (c) => {
+  let body: { force?: unknown; numbers?: unknown } = {};
+  try {
+    body = (await c.req.json()) as typeof body;
+  } catch {
+    body = {};
+  }
+  if (body.numbers !== undefined && (!Array.isArray(body.numbers) || body.numbers.some((x) => !Number.isInteger(x)))) {
+    return c.json({ error: "numbers must be an array of integers" }, 400);
+  }
+  try {
+    const job = startIssueScan({
+      force: body.force === true,
+      ...(Array.isArray(body.numbers) ? { numbers: body.numbers as number[] } : {}),
+    });
+    return c.json({ jobId: job.id, job });
+  } catch (err) {
+    if (err instanceof IssueScanInProgressError) return c.json({ error: err.message, jobId: err.jobId }, 409);
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+app.get("/api/issues/scan/:jobId", (c) => {
+  const job = getIssueJob(c.req.param("jobId"));
+  if (!job) return c.json({ error: "no such issue scan job" }, 404);
+  return c.json(job);
+});
+
+app.get("/api/issues/:n", (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "issue number must be a positive integer" }, 400);
+  const snapshot = readIssueSnapshots()[String(n)] ?? null;
+  if (!snapshot) return c.json({ error: `issue #${n} has not been analysed yet` }, 404);
+  return c.json({ snapshot, evaluation: latestIssueEvaluation(n) });
+});
+
+app.post("/api/issues/:n/evaluate", async (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "issue number must be a positive integer" }, 400);
+  const running = runningIssueScan();
+  if (running) return c.json({ error: "an issue scan is running", jobId: running.id }, 409);
+  try {
+    return c.json(await evaluateIssue(n));
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
+
+app.post("/api/issues/:n/triage", async (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "issue number must be a positive integer" }, 400);
+  let raw: { status?: unknown; by?: unknown };
+  try {
+    raw = (await c.req.json()) as typeof raw;
+  } catch {
+    return c.json({ error: "body must be JSON" }, 400);
+  }
+  const allowed = ["kept", "snoozed", "untriaged"];
+  if (typeof raw.status !== "string" || !allowed.includes(raw.status)) {
+    return c.json({ error: `status must be one of ${allowed.join(", ")}` }, 400);
+  }
+  return c.json(
+    setIssueTriage({
+      issueNumber: n,
+      status: raw.status as "kept" | "snoozed" | "untriaged",
+      updatedAt: new Date().toISOString(),
+      ...(typeof raw.by === "string" && raw.by.trim() !== "" ? { by: raw.by.trim() } : {}),
+    }),
+  );
+});
+
+const ISSUE_ACTION_KINDS: IssueActionKind[] = ["close_completed", "close_not_planned", "comment", "labels"];
+
+/**
+ * The one-click route. One click is one request, but the request still has to
+ * prove three things before anything leaves the machine: it names a person, it
+ * was made against the analysis that is current, and GitHub agrees nobody has
+ * touched the issue since that analysis. A comment that lands between the
+ * analysis and the click — the reporter saying "still happens!" — refuses the
+ * close rather than talking over it.
+ */
+app.post("/api/issues/:n/actions", async (c) => {
+  const n = prNumberOf(c.req.param("n"));
+  if (n === null) return c.json({ error: "issue number must be a positive integer" }, 400);
+
+  let raw: { evaluationId?: unknown; kind?: unknown; body?: unknown; labels?: unknown; actor?: unknown };
+  try {
+    raw = (await c.req.json()) as typeof raw;
+  } catch {
+    return c.json({ error: "body must be JSON" }, 400);
+  }
+  if (typeof raw.kind !== "string" || !ISSUE_ACTION_KINDS.includes(raw.kind as IssueActionKind)) {
+    return c.json({ error: `kind must be one of ${ISSUE_ACTION_KINDS.join(", ")}` }, 400);
+  }
+  if (typeof raw.actor !== "string" || raw.actor.trim() === "") {
+    return c.json({ error: "actor is required: every write is attributable to a person" }, 400);
+  }
+  if (typeof raw.evaluationId !== "string" || raw.evaluationId === "") {
+    return c.json({ error: "evaluationId is required" }, 400);
+  }
+  const kind = raw.kind as IssueActionKind;
+  const actor = raw.actor.trim();
+  const evaluationIdIn = raw.evaluationId;
+  const body = typeof raw.body === "string" && raw.body.trim() !== "" ? raw.body : null;
+  const labels =
+    Array.isArray(raw.labels) && raw.labels.every((l) => typeof l === "string")
+      ? (raw.labels as string[]).map((l) => l.trim()).filter((l) => l !== "")
+      : [];
+
+  const evaluation = latestIssueEvaluation(n);
+  const record = (outcome: ActionRecord["outcome"], extra: Partial<ActionRecord> = {}): ActionRecord =>
+    appendAction({
+      id: newId("act"),
+      target: "issue",
+      prNumber: n,
+      headSha: evaluation?.issueUpdatedAt ?? "unknown",
+      proposalId: evaluationIdIn,
+      kind,
+      confirmedBy: actor,
+      requestedAt: new Date().toISOString(),
+      outcome,
+      ...(body !== null ? { body: signBody(body, actor) } : {}),
+      ...(labels.length > 0 ? { labels } : {}),
+      ...extra,
+    });
+
+  if (!evaluation || evaluation.id !== evaluationIdIn) {
+    return c.json(
+      record("refused_stale", {
+        error: `this action was made against an analysis of #${n} that is no longer the latest; reload and look again`,
+      }),
+      409,
+    );
+  }
+  if (kind === "comment" && body === null) {
+    return c.json(record("refused_bad_confirm", { error: "a comment needs a body" }), 400);
+  }
+  if (kind === "labels" && labels.length === 0) {
+    return c.json(record("refused_bad_confirm", { error: "no labels to apply" }), 400);
+  }
+
+  let live;
+  try {
+    live = await getIssueState(n);
+  } catch (err) {
+    return c.json(record("failed", { error: `could not read #${n} from GitHub: ${(err as Error).message}` }), 502);
+  }
+  if (live.isPr) return c.json(record("refused_bad_confirm", { error: `#${n} is a pull request` }), 400);
+  if (live.state !== "open") {
+    return c.json(record("refused_stale", { error: `#${n} is already closed on GitHub` }), 409);
+  }
+  if (live.updatedAt !== evaluation.issueUpdatedAt) {
+    return c.json(
+      record("refused_stale", {
+        error: `#${n} has new activity since it was analysed (GitHub says updated ${live.updatedAt}, the analysis saw ${evaluation.issueUpdatedAt}). Re-analyse before acting.`,
+      }),
+      409,
+    );
+  }
+
+  if (!writesEnabled()) {
+    return c.json(
+      record("refused_writes_disabled", {
+        error: "ALLOW_GITHUB_WRITES is not 1, so nothing was written to GitHub. The attempt is recorded in the audit log.",
+      }),
+      403,
+    );
+  }
+
+  // Comment first, then the state change: a closed issue whose explanation
+  // failed to post is worse than an explained issue that is still open.
+  let url: string | undefined;
+  try {
+    if (body !== null && kind !== "labels") {
+      url = (await createIssueComment(n, signBody(body, actor))).url;
+    }
+    if (kind === "close_completed" || kind === "close_not_planned") {
+      const closed = await closeIssue(n, kind === "close_completed" ? "completed" : "not_planned");
+      url = url ?? closed.url;
+    }
+    if (labels.length > 0) {
+      const labelled = await addLabels(n, labels);
+      url = url ?? labelled.url.replace("/pull/", "/issues/");
+    }
+    return c.json(record("posted", url ? { githubUrl: url } : {}), 201);
+  } catch (err) {
+    const partial = url ? ` (the comment did post: ${url})` : "";
+    return c.json(record("failed", { error: `${(err as Error).message}${partial}`, ...(url ? { githubUrl: url } : {}) }), 502);
+  }
+});
+
 // --- deep analysis (DESIGN-deep.md) -------------------------------------------
 
 app.get("/api/prs/:n/dossier", async (c) => {
@@ -790,6 +1085,43 @@ app.post("/api/admin/settings/test", async (c) => {
   } catch (err) {
     return c.json({ error: (err as Error).message, key: raw.key }, 500);
   }
+});
+
+/**
+ * Restart the server so every setting is re-read from .env. Only possible under
+ * scripts/supervise.mjs (npm run dev / npm start), which starts a new process
+ * when this one exits with RESTART_EXIT_CODE. Refused while work is in flight
+ * unless `force` is set: a restart kills a scan or a paid deep run mid-way.
+ */
+app.post("/api/admin/restart", async (c) => {
+  let raw: { force?: unknown; reason?: unknown } = {};
+  try {
+    raw = (await c.req.json()) as typeof raw;
+  } catch {
+    raw = {};
+  }
+  if (!supervised()) {
+    return c.json(
+      {
+        error:
+          "the server is not running under scripts/supervise.mjs, so it cannot restart itself. Start it with npm run dev or npm start, or restart it by hand.",
+        supervised: false,
+      },
+      409,
+    );
+  }
+  const busy = [
+    runningJob() ? "a pull-request scan" : null,
+    runningIssueScan() ? "an issue scan" : null,
+    anyDeepRunning() ? "a deep analysis run" : null,
+  ].filter((x): x is string => x !== null);
+  if (busy.length > 0 && raw.force !== true) {
+    return c.json({ error: `not restarting while ${busy.join(" and ")} is running`, busy }, 409);
+  }
+  logSettingsChange([`(restart${typeof raw.reason === "string" ? `: ${raw.reason.slice(0, 80)}` : ""})`]);
+  console.error(`[admin] restart requested; pid ${process.pid} exiting with ${RESTART_EXIT_CODE}`);
+  setTimeout(() => restartHooks.exit(RESTART_EXIT_CODE), restartHooks.delayMs);
+  return c.json({ restarting: true, pid: process.pid, busy }, 202);
 });
 
 app.all("/api/*", (c) => c.json({ error: `no such endpoint: ${c.req.path}` }, 404));

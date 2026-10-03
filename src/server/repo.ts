@@ -492,3 +492,54 @@ export async function mergeBase(a: string, b: string): Promise<string | null> {
     return null;
   }
 }
+
+// --- default-branch reads for issue triage ----------------------------------
+
+/** The commit a rev points at, or null when it does not resolve. */
+export async function resolveRev(rev: string): Promise<string | null> {
+  assertRev(rev);
+  try {
+    const { stdout } = await git(["rev-parse", "--verify", "--quiet", `${rev}^{commit}`]);
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+const allFilesCache = new Map<string, string[]>();
+
+/** Every file path at a commit. Tree objects only, so a blobless clone answers it locally. */
+export async function listAllFiles(sha: string): Promise<string[]> {
+  assertRev(sha);
+  const hit = allFilesCache.get(sha);
+  if (hit) return hit;
+  const { stdout } = await git(["ls-tree", "-r", "--name-only", "-z", "--full-tree", sha]);
+  const files = stdout.split("\0").filter((x) => x.length > 0);
+  allFilesCache.clear(); // one tree at a time is plenty: it is always the default branch
+  allFilesCache.set(sha, files);
+  return files;
+}
+
+function assertIsoDate(since: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(since)) throw new GuardError(`not an ISO date: ${since}`);
+  return since;
+}
+
+/** Commits reachable from `rev` since a date, optionally limited to some paths, newest first. */
+export async function logSince(rev: string, since: string, paths: string[] = [], max = 200): Promise<LogEntry[]> {
+  assertRev(rev);
+  assertIsoDate(since);
+  for (const p of paths) assertPathShape(p);
+  const args = ["log", LOG_FORMAT, `--max-count=${clampMax(max, 200, 5000)}`, `--since=${since}`, rev];
+  if (paths.length > 0) args.push("--", ...paths);
+  const { stdout } = await git(args);
+  return parseLog(stdout);
+}
+
+/** How many commits reachable from `rev` landed since a date. Cheap: no diffs. */
+export async function countSince(rev: string, since: string): Promise<number> {
+  assertRev(rev);
+  assertIsoDate(since);
+  const { stdout } = await git(["rev-list", "--count", `--since=${since}`, rev]);
+  return Number(stdout.trim()) || 0;
+}

@@ -27,6 +27,10 @@ import type {
   DeepStep,
   Dossier,
   Evaluation,
+  IssueActionKind,
+  IssueListItem,
+  IssueScanEvent,
+  IssueTriageState,
   Policy,
   PrListItem,
   PrSnapshot,
@@ -39,7 +43,7 @@ import type {
 } from "../../shared/types";
 
 /** Everything that arrives on /api/events: scan progress and deep analysis. */
-export type HarnessEvent = ScanEvent | DeepEvent;
+export type HarnessEvent = ScanEvent | DeepEvent | IssueScanEvent;
 
 /** True when the app runs against src/web/fixtures.ts instead of the Hono server. */
 export const FIXTURES_MODE = import.meta.env.VITE_FIXTURES === "1";
@@ -60,6 +64,11 @@ export interface HealthInfo {
    * Absent means unknown, and the modal says so rather than guessing.
    */
   writesEnabled?: boolean;
+  /** The server process, so a restart can be seen to have happened. */
+  pid?: number;
+  startedAt?: string;
+  /** Running under scripts/supervise.mjs, so POST /api/admin/restart works. */
+  supervised?: boolean;
 }
 
 export interface StatsSummary {
@@ -312,6 +321,11 @@ export function subscribeEvents(
     "deep:step",
     "deep:done",
     "deep:error",
+    "issues:start",
+    "issue:stage",
+    "issue:done",
+    "issue:error",
+    "issues:done",
   ];
   for (const name of named) {
     source.addEventListener(name, (ev) => dispatch((ev as MessageEvent<string>).data));
@@ -613,6 +627,50 @@ export async function setTriage(n: number, req: TriageRequest): Promise<TriageSt
 }
 
 
+// ---------------------------------------------------------------- open issues
+// No fixtures behind these: the issue board needs the server. In fixtures mode
+// the list comes back empty with a note rather than failing the whole app.
+
+export interface IssueBoard {
+  items: IssueListItem[];
+  running: ScanJob | null;
+  estCostUsd: number;
+}
+
+export interface IssueActionRequest {
+  evaluationId: string;
+  kind: IssueActionKind;
+  body?: string;
+  labels?: string[];
+  actor: string;
+}
+
+export async function listIssues(): Promise<IssueBoard> {
+  if (FIXTURES_MODE) return { items: [], running: null, estCostUsd: 0 };
+  return request<IssueBoard>("/api/issues");
+}
+
+export async function startIssueScan(options: { force?: boolean; numbers?: number[] } = {}): Promise<{ jobId: string }> {
+  if (FIXTURES_MODE) throw new ApiError(0, "Issue scans need the harness server; fixtures mode has no issues.");
+  return request<{ jobId: string }>("/api/issues/scan", { method: "POST", body: JSON.stringify(options) });
+}
+
+export async function setIssueTriage(n: number, status: IssueTriageState["status"], by?: string): Promise<IssueTriageState> {
+  return request<IssueTriageState>(`/api/issues/${n}/triage`, {
+    method: "POST",
+    body: JSON.stringify(by ? { status, by } : { status }),
+  });
+}
+
+/** Like postAction: a refusal comes back as the ActionRecord the server logged. */
+export async function postIssueAction(n: number, req: IssueActionRequest): Promise<ActionRecord> {
+  const path = `/api/issues/${n}/actions`;
+  const res = await rawRequest(path, { method: "POST", body: JSON.stringify(req) });
+  if (isActionRecord(res.parsed)) return res.parsed;
+  if (!res.ok) throw errorFrom(res, path);
+  throw new ApiError(res.status, "The server did not return an action record.");
+}
+
 // ---------------------------------------------------------------- admin settings
 // The .env editor behind #/admin. A secret is never sent to the browser in full:
 // the server replaces it with a short mask, and a PUT that echoes that mask back is
@@ -637,6 +695,50 @@ export async function saveAdminSettings(updates: Record<string, string | null>):
     method: "PUT",
     body: JSON.stringify({ updates }),
   });
+}
+
+export interface RestartResponse {
+  restarting: boolean;
+  pid: number;
+  busy: string[];
+}
+
+/**
+ * Ask the server to restart itself. A 409 carries either `busy` (work in flight;
+ * retry with force) or `supervised: false` (nothing would bring it back).
+ */
+export async function restartServer(options: { force?: boolean; reason?: string } = {}): Promise<RestartResponse> {
+  if (FIXTURES_MODE) {
+    const store = await db();
+    await latency(200, 400);
+    const pid = store.health.pid ?? 4242;
+    window.setTimeout(() => {
+      store.health = { ...store.health, pid: pid + 1, startedAt: new Date().toISOString() };
+    }, 1200);
+    return { restarting: true, pid, busy: [] };
+  }
+  return request<RestartResponse>("/api/admin/restart", { method: "POST", body: JSON.stringify(options) });
+}
+
+/**
+ * Poll /api/health until a process other than `oldPid` answers. While the server
+ * is down the dev proxy answers 502/504 and fetch may fail outright; both just
+ * mean "not yet".
+ */
+export async function waitForRestart(oldPid: number, timeoutMs = 30_000): Promise<HealthInfo> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      const health = await getHealth();
+      if (health.pid !== undefined && health.pid !== oldPid) return health;
+    } catch {
+      /* down, or restarting */
+    }
+    if (Date.now() > deadline) {
+      throw new ApiError(0, `The server did not come back within ${Math.round(timeoutMs / 1000)}s. Check the terminal running npm run dev.`);
+    }
+    await sleep(500);
+  }
 }
 
 export async function testAdminSetting(key: string): Promise<SettingTestResult> {

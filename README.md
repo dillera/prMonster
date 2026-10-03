@@ -165,7 +165,9 @@ the chunk and files that produced each aggregated value so you can check it.
 - Nothing is written unless `ALLOW_GITHUB_WRITES=1` is set in `.env`. With it
   off, a confirmed action is recorded as `refused_writes_disabled` in the audit
   log and nothing leaves the machine. That is the default.
-- **Merging is never offered.** There is no code path that merges.
+- **Merging is never offered.** There is no code path that merges. Issues
+  can be commented on, labelled and closed (see [Open issues](#open-issues)),
+  never reopened, edited or deleted.
 - The write functions in `src/server/github.ts` are reachable from exactly one
   route and each re-checks the environment flag themselves.
 
@@ -251,6 +253,15 @@ three localhost-only routes:
 | `GET /api/admin/settings` | The catalog, each value's state and where it came from (`dotenv`, `env` or `default`). |
 | `PUT /api/admin/settings` | `{ updates: { KEY: "value" \| null } }` — validates, rewrites `.env`, applies live. |
 | `POST /api/admin/settings/test` | `{ key }` — reaches the service that key configures and reports what came back. |
+| `POST /api/admin/restart` | `{ force? }` — the server exits with code 75 and the supervisor starts a fresh one. 409 while a scan or deep run is in flight unless `force`. |
+
+On/off settings (`ALLOW_GITHUB_WRITES`, `JEV_MOCK`, `DEEP_DOSSIER`) are shown
+as **Switches** at the top of the page with an explicit *Disabled / Enabled*
+control and a sentence saying what the current state means. A switch saves on
+click. Every save — a switch, or *Save & restart* for the other fields —
+writes `.env` and then restarts the server, and a status banner follows it
+through *Saving → Restarting → Coming back up → Done*, ending with the old and
+new process ids. The header shows `github writes: ON/off` on every page.
 
 Four rules the server keeps to:
 
@@ -264,11 +275,16 @@ Four rules the server keeps to:
   unsetting a key comments it out rather than deleting its documentation. The
   write is tmp-file + rename, and the file is seeded from `.env.example` if it
   does not exist yet.
-- **Changes apply to the next request.** `process.env` is updated and the few
-  memoised caches (the GitHub token, the cloned repo, the OpenRouter model
-  list) are cleared. `PORT`, `DEEP_STORE_PATH`, `DOSSIER_CACHE_DIR` and
-  `DOTENV_PATH` are read once at startup, so they are written to `.env` and
-  listed in `restartRequired` instead.
+- **Changes are applied by a restart.** `npm run dev` and `npm start` run the
+  server under `scripts/supervise.mjs`, which starts it again whenever it
+  exits with code 75, so a fresh process reads every value from `.env` —
+  including `PORT`, `DEEP_STORE_PATH`, `DOSSIER_CACHE_DIR` and `DOTENV_PATH`,
+  which are read once at startup. (In dev the supervisor also restarts on
+  edits under `src/server` and `src/shared`, replacing `tsx watch`.) A server
+  started some other way cannot restart itself: changes still apply live
+  where possible, and the page says which keys wait for a manual restart.
+  After changing `PORT` in dev, restart `npm run dev` too, because Vite keeps
+  proxying to the port it started with.
 - **Only this machine may ask.** Any request whose `Host` is not `localhost`,
   `127.0.0.1` or `[::1]` gets a 403. Each change is logged to stderr and to
   `data/admin-log.json` **by key only** — never a value.
@@ -345,6 +361,58 @@ runs cost nothing.
 - **The first dossier is slow.** It clones the repository and, the first time
   anything greps, materialises one tree so `git grep` does not fetch blobs one
   at a time. After that it is cached per head SHA.
+
+## Open issues
+
+The **Issues** tab (`#/issues`) runs the same kind of triage over every open
+issue, to clear out the backlog: many old issues describe code that has since
+been moved, rewritten or fixed. *Scan open issues* analyses each one and
+recommends one of:
+
+| Recommendation | One-click action | When |
+|---|---|---|
+| **Close: fixed** | close as completed + comment | A merged PR says `fixes #n`, or Jev reads a linked merged PR or the thread as having fixed it. |
+| **Close: answered** | close as completed + comment | A question or setup problem answered in the thread. |
+| **Close: obsolete** | close as not planned + comment | The files and identifiers it names are gone or moved, and the issue is at least 180 days old and quiet for 90. |
+| **Close: no response** | close as not planned + comment | A maintainer asked the reporter something 60+ days ago and got no reply. |
+| **Ask if still relevant** | comment (+ a `stale`-type label if the repo has one) | Quiet for a year with nothing decisive. Age alone never closes. |
+| **Keep open** | add `bug`/`enhancement` if unlabelled, else nothing | Concrete and still applies. |
+| **Needs a human** | none offered | Jev could not tell, the issue is recent or active, or its text addresses automation. |
+
+**What the issue analysis looks at.** Deterministic evidence comes first, with no model involved:
+
+- **Thread facts:** age, last activity, who spoke last, and how long a maintainer question has gone unanswered.
+- **Linked work:** from the issue timeline, the PRs that mention or close the issue and the commits that cite it.
+- **Code checks:** every path and identifier the issue names, checked against `origin/master` today. Each one is reported as present, moved or missing, along with how many commits have touched it since the issue opened.
+
+Jev then gets that evidence with eight questions: type, actionable, resolved in thread, fixed by linked work, superseded by code changes, awaiting reporter, still relevant (0–3), and text aimed at automation. One call per issue; the full backlog of ~90 issues costs under a cent.
+
+**One click, still human.** Each issue shows the recommendation, its
+reasons, the evidence, and a drafted comment you can edit. One button does it
+(comment first, then close). The click is the confirmation, but the server
+still:
+
+- needs a name in *Acting as* (kept in the browser), and signs the comment with it;
+- refuses if the analysis is not the latest, the issue is already closed, or
+  **anything changed on GitHub since the analysis** (a new comment saying
+  "still happens" blocks the close until you re-analyse);
+- refuses and logs everything while `ALLOW_GITHUB_WRITES` is not `1`;
+- records every attempt in the audit log, marked as an issue action.
+
+*Keep open* and *Snooze* are local marks only. With *auto-advance* on, the next
+unhandled issue opens after each action.
+
+| Route | What it does |
+|---|---|
+| `GET /api/issues` | Open issues with their latest analysis, local mark and last action. |
+| `POST /api/issues/scan` | `{ force?, numbers? }` — analyse open issues; unchanged ones are skipped. |
+| `GET /api/issues/:n` | Stored snapshot and analysis. |
+| `POST /api/issues/:n/actions` | `{ evaluationId, kind, actor, body?, labels? }`, `kind` one of `close_completed`, `close_not_planned`, `comment`, `labels`. |
+| `POST /api/issues/:n/triage` | `{ status: kept \| snoozed \| untriaged }`, local only. |
+
+Analyses live in `data/issue-evaluations.json`, snapshots in
+`data/issue-snapshots.json`, local marks in `data/issue-triage.json`. The
+rules are in `src/server/issueDecide.ts` (pure, unit tested).
 
 ## Caveats
 

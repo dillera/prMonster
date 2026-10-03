@@ -1,6 +1,6 @@
 // FujiNet PR triage dashboard (DESIGN.md 7).
 //
-// Routing is location.hash only: #/ , #/pr/1650 , #/audit , #/policy , #/admin.
+// Routing is location.hash only: #/ , #/pr/1650 , #/issues , #/issue/378 , #/audit , #/policy , #/admin.
 // All decision maths lives on the server; this app displays stored evaluations and
 // asks /api/decide whenever a trial policy needs re-deciding.
 
@@ -45,9 +45,10 @@ import type { SortKey } from "./components/PrList";
 import type { DecisionFilter } from "./components/StatsRow";
 import { StatsRow } from "./components/StatsRow";
 import { ErrorNote } from "./components/ui";
+import { IssuesView } from "./components/IssuesView";
 
 // ---------------------------------------------------------------- routing
-type View = "list" | "pr" | "audit" | "policy" | "admin";
+type View = "list" | "pr" | "issues" | "issue" | "audit" | "policy" | "admin";
 interface Route {
   view: View;
   n: number | null;
@@ -59,6 +60,11 @@ function parseHash(hash: string): Route {
     const n = Number.parseInt(clean.slice(3), 10);
     return Number.isFinite(n) ? { view: "pr", n } : { view: "list", n: null };
   }
+  if (clean.startsWith("issue/")) {
+    const n = Number.parseInt(clean.slice(6), 10);
+    return Number.isFinite(n) ? { view: "issue", n } : { view: "issues", n: null };
+  }
+  if (clean === "issues") return { view: "issues", n: null };
   if (clean === "audit") return { view: "audit", n: null };
   if (clean === "policy") return { view: "policy", n: null };
   if (clean === "admin") return { view: "admin", n: null };
@@ -419,6 +425,7 @@ export function App() {
   }, []);
 
   const drawerOpen = route.view === "policy";
+  const issuesView = route.view === "issues" || route.view === "issue";
   const activePolicy = drawerOpen && draftPolicy ? draftPolicy : policy;
 
   const closeDrawer = useCallback((): void => {
@@ -467,6 +474,10 @@ export function App() {
         </div>
       ) : null}
 
+      {issuesView ? (
+        <IssuesView selected={route.view === "issue" ? route.n : null} health={health} />
+      ) : (
+      <>
       <StatsRow stats={stats} filters={filters} onToggle={toggleFilter} progress={progress} />
 
       <main
@@ -476,7 +487,7 @@ export function App() {
         }`}
       >
         {route.view === "admin" ? (
-          <AdminPage />
+          <AdminPage health={health} onHealth={setHealth} />
         ) : route.view === "audit" ? (
           <AuditLog records={actions} loading={actionsLoading} error={actionsError} onRefresh={refreshActions} />
         ) : (
@@ -521,6 +532,8 @@ export function App() {
           </>
         )}
       </main>
+      </>
+      )}
 
       {drawerOpen ? (
         <>

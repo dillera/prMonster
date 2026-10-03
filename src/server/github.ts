@@ -10,7 +10,16 @@
 
 import { execFileSync } from "node:child_process";
 
-import type { CheckRun, CiState, PrFile, PrSnapshot } from "../shared/types.js";
+import type {
+  CheckRun,
+  CiState,
+  IssueComment,
+  IssueSnapshot,
+  LinkedPr,
+  PrFile,
+  PrSnapshot,
+  ReferencingCommit,
+} from "../shared/types.js";
 import { readSnapshotCache, writeSnapshotCache } from "./store.js";
 
 export type GithubAuthMode = "token" | "gh" | "anon";
@@ -73,7 +82,7 @@ export class GithubError extends Error {
 
 interface RequestOptions {
   accept?: string;
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   body?: unknown;
 }
 
@@ -492,6 +501,17 @@ export async function addLabels(n: number, labels: string[]): Promise<WriteResul
   return { url: `https://github.com/${full}/pull/${n}` };
 }
 
+/** Close an issue with a reason. Never reopens, never edits anything else. */
+export async function closeIssue(n: number, reason: "completed" | "not_planned"): Promise<WriteResult> {
+  assertWritesEnabled(`closing issue #${n}`);
+  const { full } = githubRepo();
+  const res = await ghJson<{ html_url: string }>(`/repos/${full}/issues/${n}`, {
+    method: "PATCH",
+    body: { state: "closed", state_reason: reason },
+  });
+  return { url: res.html_url };
+}
+
 // --- light listing (used by /api/prs so the dashboard costs one API call) ----
 
 export interface OpenPrRef {
@@ -654,4 +674,152 @@ export async function getPrSummary(n: number, withFiles = false): Promise<PrSumm
 export async function getPrBaseSha(n: number): Promise<{ baseSha: string; baseRef: string; headSha: string }> {
   const pr = await getPr(n);
   return { baseSha: pr.base.sha, baseRef: pr.base.ref, headSha: pr.head.sha };
+}
+
+// --- issues -----------------------------------------------------------------
+
+const MAINTAINER_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+interface ApiIssue {
+  number: number;
+  title: string;
+  body: string | null;
+  user: { login: string } | null;
+  author_association: string;
+  html_url: string;
+  state: string;
+  state_reason?: string | null;
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+  labels: Array<{ name: string } | string>;
+  assignees?: Array<{ login: string }> | null;
+  reactions?: { total_count?: number };
+  comments: number;
+  /** Present on pull requests: the issues endpoint lists both. */
+  pull_request?: unknown;
+}
+
+interface ApiTimelineEvent {
+  event?: string;
+  commit_id?: string | null;
+  commit_url?: string | null;
+  created_at?: string;
+  source?: {
+    type?: string;
+    issue?: ApiIssue & { pull_request?: { merged_at?: string | null; html_url?: string }; repository?: { full_name?: string } };
+  };
+}
+
+export interface OpenIssueRef {
+  number: number;
+  title: string;
+  updatedAt: string;
+}
+
+/** Open issues only: the issues endpoint also returns pull requests, which are dropped. */
+export async function listOpenIssues(): Promise<OpenIssueRef[]> {
+  const { full } = githubRepo();
+  const items = await ghJsonPaged<ApiIssue>(`/repos/${full}/issues?state=open&per_page=100`);
+  return items
+    .filter((i) => i.pull_request === undefined)
+    .map((i) => ({ number: i.number, title: i.title, updatedAt: i.updated_at }))
+    .sort((a, b) => b.number - a.number);
+}
+
+/** `fixes #12`, `Closes #12`, `resolved #12` — GitHub's closing keywords. */
+export function hasClosingKeyword(text: string, n: number): boolean {
+  const re = new RegExp(`\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s+(?:[\\w.-]+/[\\w.-]+)?#${n}\\b`, "i");
+  return re.test(text);
+}
+
+export function linkedPrsFromTimeline(events: ApiTimelineEvent[], n: number, repoFull: string): LinkedPr[] {
+  const byNumber = new Map<number, LinkedPr>();
+  for (const e of events) {
+    if (e.event !== "cross-referenced") continue;
+    const src = e.source?.issue;
+    if (!src || src.pull_request === undefined) continue;
+    // A PR in a fork or another repository cannot have fixed this one's code.
+    const from = src.repository?.full_name;
+    if (from && from.toLowerCase() !== repoFull.toLowerCase()) continue;
+    const mergedAt = src.pull_request?.merged_at ?? null;
+    const state: LinkedPr["state"] = mergedAt ? "merged" : src.state === "closed" ? "closed" : "open";
+    byNumber.set(src.number, {
+      number: src.number,
+      title: src.title,
+      state,
+      mergedAt,
+      url: src.html_url,
+      author: src.user?.login ?? "unknown",
+      closingKeyword: hasClosingKeyword(`${src.title}\n${src.body ?? ""}`, n),
+    });
+  }
+  return [...byNumber.values()].sort((a, b) => a.number - b.number);
+}
+
+export function referencingCommitsFromTimeline(events: ApiTimelineEvent[]): ReferencingCommit[] {
+  const out: ReferencingCommit[] = [];
+  const seen = new Set<string>();
+  for (const e of events) {
+    if (e.event !== "referenced" && e.event !== "closed") continue;
+    if (!e.commit_id || seen.has(e.commit_id)) continue;
+    seen.add(e.commit_id);
+    out.push({ sha: e.commit_id, at: e.created_at ?? "", url: e.commit_url ?? "" });
+  }
+  return out;
+}
+
+function toIssueComment(c: ApiComment): IssueComment {
+  const association = c.author_association ?? "NONE";
+  return {
+    author: c.user?.login ?? "unknown",
+    association,
+    isMaintainer: MAINTAINER_ASSOCIATIONS.has(association),
+    at: c.created_at ?? "",
+    body: c.body ?? "",
+    url: c.html_url ?? "",
+  };
+}
+
+/** Everything the issue triage needs from GitHub: the issue, its thread, and its timeline. */
+export async function fetchIssueSnapshot(n: number): Promise<IssueSnapshot> {
+  const { full } = githubRepo();
+  const issue = await ghJson<ApiIssue>(`/repos/${full}/issues/${n}`);
+  if (issue.pull_request !== undefined) throw new GithubError(400, `#${n} is a pull request, not an issue`);
+  const [comments, timeline] = await Promise.all([
+    issue.comments > 0
+      ? ghJsonPaged<ApiComment>(`/repos/${full}/issues/${n}/comments?per_page=100`)
+      : Promise.resolve([] as ApiComment[]),
+    ghJsonPaged<ApiTimelineEvent>(`/repos/${full}/issues/${n}/timeline?per_page=100`).catch((err: unknown) => {
+      console.warn(`[github] timeline for issue #${n} unavailable: ${(err as Error).message}`);
+      return [] as ApiTimelineEvent[];
+    }),
+  ]);
+  return {
+    number: issue.number,
+    title: issue.title,
+    body: issue.body ?? "",
+    author: issue.user?.login ?? "unknown",
+    authorAssociation: issue.author_association,
+    url: issue.html_url,
+    state: issue.state === "closed" ? "closed" : "open",
+    stateReason: issue.state_reason ?? null,
+    createdAt: issue.created_at,
+    updatedAt: issue.updated_at,
+    closedAt: issue.closed_at,
+    labels: issue.labels.map((l) => (typeof l === "string" ? l : l.name)),
+    assignees: (issue.assignees ?? []).map((a) => a.login),
+    reactions: issue.reactions?.total_count ?? 0,
+    comments: comments.map(toIssueComment),
+    linkedPrs: linkedPrsFromTimeline(timeline, n, full),
+    referencingCommits: referencingCommitsFromTimeline(timeline),
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
+/** The cheap read the one-click route uses to prove nothing moved since the analysis. */
+export async function getIssueState(n: number): Promise<{ state: "open" | "closed"; updatedAt: string; isPr: boolean }> {
+  const { full } = githubRepo();
+  const issue = await ghJson<ApiIssue>(`/repos/${full}/issues/${n}`);
+  return { state: issue.state === "closed" ? "closed" : "open", updatedAt: issue.updated_at, isPr: issue.pull_request !== undefined };
 }

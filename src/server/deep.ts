@@ -696,6 +696,11 @@ export function spendToday(now = new Date()): { todayUsd: number; runsToday: num
 
 const inFlight = new Map<number, { runId: string; abort: AbortController }>();
 
+/** True while any deep run is in flight; a restart would kill it mid-spend. */
+export function anyDeepRunning(): boolean {
+  return inFlight.size > 0;
+}
+
 export function runningFor(n: number): string | null {
   return inFlight.get(n)?.runId ?? null;
 }

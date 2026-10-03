@@ -53,7 +53,8 @@ export interface Policy { readyThreshold: number; reviewThreshold: number; confi
 export interface ScanJob { id: string; startedAt: string; finishedAt?: string; total: number; done: number; current?: number; errors: Array<{ n: number; error: string }>; status: "running" | "done" | "failed"; }
 export type ActionKind = "comment" | "review_request_changes" | "review_approve" | "labels";
 export interface Proposal { id: string; prNumber: number; headSha: string; evaluationId: string; kind: ActionKind; title: string; body: string; labels?: string[]; rationale: string[]; generatedAt: string; }
-export interface ActionRecord { id: string; prNumber: number; headSha: string; proposalId: string; kind: ActionKind; body?: string; labels?: string[]; confirmedBy: string; requestedAt: string; outcome: "posted" | "refused_writes_disabled" | "refused_stale" | "refused_bad_confirm" | "failed"; githubUrl?: string; error?: string; }
+/** `target` is absent for pull-request actions (the original shape); issue actions set it to "issue" and use `prNumber` for the issue number. */
+export interface ActionRecord { id: string; target?: "pr" | "issue"; prNumber: number; headSha: string; proposalId: string; kind: ActionKind | IssueActionKind; body?: string; labels?: string[]; confirmedBy: string; requestedAt: string; outcome: "posted" | "refused_writes_disabled" | "refused_stale" | "refused_bad_confirm" | "failed"; githubUrl?: string; error?: string; }
 export interface TriageState { prNumber: number; status: "untriaged" | "triaged" | "snoozed"; note?: string; updatedAt: string; by?: string; }
 export type ScanEvent =
   | { type: "scan:start"; jobId: string; total: number }
@@ -110,3 +111,55 @@ export interface SettingDef { key: string; label: string; description: string; g
 export interface SettingValue { key: string; set: boolean; source: "env" | "dotenv" | "default"; value: string | null; effective: string | null; }
 export interface AdminSettings { defs: SettingDef[]; values: SettingValue[]; dotenvPath: string; dotenvWritable: boolean; restartRequired: string[]; }
 export interface SettingTestResult { key: string; ok: boolean; detail: string; checkedAt: string; }
+
+// ---- Issue triage (open issues: still relevant, or safe to close?) ----
+export interface IssueComment { author: string; association: string; isMaintainer: boolean; at: string; body: string; url: string; }
+/** A pull request that mentions or closes this issue, from the issue timeline. */
+export interface LinkedPr { number: number; title: string; state: "open" | "closed" | "merged"; mergedAt: string | null; url: string; author: string; /** The PR body or title says fixes/closes/resolves #n. */ closingKeyword: boolean; }
+/** A commit on the default branch that mentions this issue (`referenced` timeline event). */
+export interface ReferencingCommit { sha: string; at: string; url: string; }
+export interface IssueSnapshot {
+  number: number; title: string; body: string; author: string; authorAssociation: string;
+  url: string; state: "open" | "closed"; stateReason: string | null; createdAt: string; updatedAt: string; closedAt: string | null;
+  labels: string[]; assignees: string[]; reactions: number; comments: IssueComment[];
+  linkedPrs: LinkedPr[]; referencingCommits: ReferencingCommit[]; fetchedAt: string;
+}
+/** One path or symbol the issue names, checked against the default branch today. */
+export interface CodeRef { kind: "path" | "symbol"; text: string; status: "exists" | "missing" | "renamed_or_moved" | "unchecked"; matches: string[]; commitsSince: number; }
+export interface IssueEvidence {
+  ageDays: number; daysSinceActivity: number; commentCount: number; participants: number;
+  lastCommentBy: "maintainer" | "author" | "other" | "none"; daysSinceMaintainerComment: number | null;
+  mergedLinkedPrs: number; mergedClosingPrs: number; openLinkedPrs: number;
+  codeRefs: CodeRef[]; codeRefsMissing: number; codeRefsChecked: number;
+  /** Commits on the default branch since the issue was opened, and those touching the paths it names. */
+  commitsSinceOpened: number | null; commitsTouchingRefsSinceOpened: number | null;
+  recentTouchingCommits: Array<{ sha: string; date: string; subject: string }>;
+  baseSha: string | null; git: boolean; notes: string[];
+}
+export type IssueActionKind = "close_completed" | "close_not_planned" | "comment" | "labels";
+export type IssueRecommendationKind =
+  | "close_fixed"          // a merged PR or the thread says it is done
+  | "close_obsolete"       // the code it describes has gone or been rewritten
+  | "close_no_response"    // a maintainer asked; the reporter never came back
+  | "close_answered"       // a question that was answered
+  | "ask_still_relevant"   // old and unclear: ask before closing
+  | "keep_open"            // concrete and still applies
+  | "needs_human";         // the model could not tell
+export interface IssueRecommendation {
+  kind: IssueRecommendationKind; confidence: number; headline: string; reasons: string[];
+  /** The one-click action this maps to, plus a drafted comment (template text, no model prose). */
+  action: IssueActionKind | null; body: string; labels: string[];
+}
+export interface IssueEvaluation {
+  id: string; issueNumber: number; issueUpdatedAt: string; evaluatedAt: string; mock: boolean; model: string;
+  evidence: IssueEvidence; answers: Record<string, JevAnswer>; recommendation: IssueRecommendation;
+  usage: { input_tokens: number; calls: number; estCostUsd: number }; durationMs: number; error?: string;
+}
+export interface IssueTriageState { issueNumber: number; status: "untriaged" | "kept" | "snoozed"; updatedAt: string; by?: string; }
+export interface IssueListItem { snapshot: IssueSnapshot; evaluation: IssueEvaluation | null; stale: boolean; triage: IssueTriageState | null; lastAction: ActionRecord | null; }
+export type IssueScanEvent =
+  | { type: "issues:start"; jobId: string; total: number }
+  | { type: "issue:stage"; n: number; stage: "fetch" | "evidence" | "jev" | "decide"; detail?: string }
+  | { type: "issue:done"; n: number; evaluation: IssueEvaluation }
+  | { type: "issue:error"; n: number; error: string }
+  | { type: "issues:done"; jobId: string };

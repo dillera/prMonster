@@ -8,11 +8,24 @@
 //
 // Saving sends only the fields that changed, and a field cleared with "Clear" is
 // sent as null, which unsets the key and lets the built in default take over.
+//
+// Every save is followed by a server restart (when the server runs under
+// scripts/supervise.mjs), so what the page shows is always what a fresh process
+// read from .env. On/off settings are switches that save and restart on click.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AdminSettings, SettingDef, SettingTestResult, SettingValue } from "../../shared/types";
-import { ApiError, getAdminSettings, saveAdminSettings, testAdminSetting } from "../lib/api";
+import type { HealthInfo } from "../lib/api";
+import {
+  ApiError,
+  getAdminSettings,
+  getHealth,
+  restartServer,
+  saveAdminSettings,
+  testAdminSetting,
+  waitForRestart,
+} from "../lib/api";
 import { relativeTime } from "../format";
 import { EmptyState, ErrorNote, Pill, Skeleton, Spinner } from "./ui";
 
@@ -66,12 +79,44 @@ function normalise(value: string | null): string {
   return value === null ? "" : value;
 }
 
+/** What on and off mean, for the switches that matter most. Others use their description. */
+const SWITCH_COPY: Record<string, { on: string; off: string; danger?: "on" | "off" }> = {
+  ALLOW_GITHUB_WRITES: {
+    on: "Live: a clicked action posts to GitHub (comments, reviews, labels, closing issues).",
+    off: "Dry run: nothing is written to GitHub. Every click is recorded in the audit log as refused.",
+    danger: "on",
+  },
+  JEV_MOCK: {
+    on: "Jev is never called. Every evaluation uses deterministic mock answers.",
+    off: "Jev is called live whenever a TypeSafe key is set.",
+    danger: "on",
+  },
+  DEEP_DOSSIER: {
+    on: "Each pull-request evaluation builds a dossier (git history, thread, drift) and asks the four deep questions.",
+    off: "No dossier during evaluation: faster scans, no deep questions.",
+  },
+};
+
+type ApplyPhase = "saving" | "restarting" | "waiting" | "done" | "blocked" | "error";
+interface ApplyState {
+  phase: ApplyPhase;
+  keys: string[];
+  message: string;
+  busy?: string[];
+}
+
 function isTruthy(value: string | null): boolean {
   const v = normalise(value).trim().toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 }
 
-export function AdminPage() {
+export function AdminPage({
+  health,
+  onHealth,
+}: {
+  health: HealthInfo | null;
+  onHealth: (next: HealthInfo) => void;
+}) {
   const [settings, setSettings] = useState<AdminSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -82,7 +127,8 @@ export function AdminPage() {
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedKeys, setSavedKeys] = useState<string[] | null>(null);
+  const [apply, setApply] = useState<ApplyState | null>(null);
+  const busyApplying = apply !== null && ["saving", "restarting", "waiting"].includes(apply.phase);
 
   const [tests, setTests] = useState<Record<string, SettingTestResult>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
@@ -160,7 +206,6 @@ export function AdminPage() {
 
   const setEdit = useCallback((key: string, value: string | null): void => {
     setSaveError(null);
-    setSavedKeys(null);
     setEdits((prev) => ({ ...prev, [key]: value }));
   }, []);
 
@@ -168,8 +213,95 @@ export function AdminPage() {
     setEdits({});
     setRevealed({});
     setSaveError(null);
-    setSavedKeys(null);
   }, []);
+
+  /** Restart, wait for a new process to answer, then re-read what it loaded. */
+  const restartAndWait = useCallback(
+    async (keys: string[], force: boolean): Promise<void> => {
+      const before = Date.now();
+      setApply({ phase: "restarting", keys, message: "Restarting the server…" });
+      let oldPid: number | undefined;
+      try {
+        oldPid = (await getHealth()).pid;
+        const res = await restartServer({ force, reason: keys.join(", ") });
+        oldPid = res.pid;
+      } catch (err: unknown) {
+        const api = err instanceof ApiError ? err : null;
+        if (api?.status === 409 && /^not restarting while/.test(api.message)) {
+          setApply({
+            phase: "blocked",
+            keys,
+            message: `Saved to .env, but ${api.message}. Changes that apply live are already in effect; the rest wait for a restart.`,
+          });
+          return;
+        }
+        setApply({ phase: "error", keys, message: `Saved to .env, but the restart failed: ${errorText(err, "unknown error")}` });
+        return;
+      }
+      setApply({ phase: "waiting", keys, message: `Waiting for the server to come back (was pid ${oldPid})…` });
+      try {
+        const next = await waitForRestart(oldPid ?? -1);
+        onHealth(next);
+        const fresh = await getAdminSettings();
+        if (cancelled.current) return;
+        setSettings(fresh);
+        const secs = ((Date.now() - before) / 1000).toFixed(1);
+        const portNote =
+          keys.includes("PORT") && window.location.port === "5173"
+            ? " PORT changed: the dev UI still proxies to the port Vite started with, so restart npm run dev too."
+            : "";
+        setApply({
+          phase: "done",
+          keys,
+          message: `Server restarted in ${secs}s (pid ${oldPid} → ${next.pid}). ${keys.join(", ")} ${keys.length === 1 ? "is" : "are"} in effect.${portNote}`,
+        });
+      } catch (err: unknown) {
+        if (!cancelled.current) setApply({ phase: "error", keys, message: errorText(err, "The server did not come back.") });
+      }
+    },
+    [onHealth],
+  );
+
+  /** Persist to .env, then restart so a fresh process loads it. */
+  const applyChanges = useCallback(
+    async (updates: Record<string, string | null>): Promise<boolean> => {
+      const keys = Object.keys(updates);
+      setSaving(true);
+      setSaveError(null);
+      setApply({ phase: "saving", keys, message: `Saving ${keys.join(", ")} to .env…` });
+      let next: AdminSettings;
+      try {
+        next = await saveAdminSettings(updates);
+      } catch (err: unknown) {
+        const message = errorText(err, "The settings could not be saved.");
+        if (!cancelled.current) {
+          setSaveError(message);
+          setApply({ phase: "error", keys, message });
+          setSaving(false);
+        }
+        return false;
+      }
+      if (cancelled.current) return true;
+      setSettings(next);
+      setSaving(false);
+      if (health?.supervised === true) {
+        await restartAndWait(keys, false);
+      } else {
+        const pending = next.restartRequired.filter((k) => keys.includes(k));
+        setApply({
+          phase: "done",
+          keys,
+          message:
+            `Saved to .env and applied to the running server.` +
+            (pending.length > 0
+              ? ` ${pending.join(", ")} need a restart, and this server was not started with npm run dev or npm start, so restart it by hand.`
+              : ""),
+        });
+      }
+      return true;
+    },
+    [health?.supervised, restartAndWait],
+  );
 
   const onSave = useCallback((): void => {
     if (!settings || !dirty) return;
@@ -178,23 +310,21 @@ export function AdminPage() {
       const edit = edits[key];
       updates[key] = edit === undefined || edit === "" ? null : edit;
     }
-    setSaving(true);
-    setSaveError(null);
-    saveAdminSettings(updates)
-      .then((next) => {
-        if (cancelled.current) return;
-        setSettings(next);
+    void applyChanges(updates).then((ok) => {
+      if (ok && !cancelled.current) {
         setEdits({});
         setRevealed({});
-        setSavedKeys(next.restartRequired.filter((k) => changedKeys.includes(k)));
-      })
-      .catch((err: unknown) => {
-        if (!cancelled.current) setSaveError(errorText(err, "The settings could not be saved."));
-      })
-      .finally(() => {
-        if (!cancelled.current) setSaving(false);
-      });
-  }, [settings, dirty, changedKeys, edits]);
+      }
+    });
+  }, [settings, dirty, changedKeys, edits, applyChanges]);
+
+  /** A switch saves and restarts on its own; other queued edits stay queued. */
+  const onSwitch = useCallback(
+    (key: string, on: boolean): void => {
+      void applyChanges({ [key]: on ? "1" : "0" });
+    },
+    [applyChanges],
+  );
 
   const runTest = useCallback(async (key: string): Promise<SettingTestResult | null> => {
     setTesting((prev) => ({ ...prev, [key]: true }));
@@ -270,7 +400,7 @@ export function AdminPage() {
 
   // Known groups in a deliberate order, then anything the server adds later, so a
   // new group is shown rather than silently dropped.
-  const present = [...new Set(settings.defs.map((d) => d.group))];
+  const present = [...new Set(settings.defs.filter((d) => d.type !== "boolean").map((d) => d.group))];
   const groups = [
     ...GROUP_ORDER.filter((g) => present.includes(g)),
     ...present.filter((g) => !GROUP_ORDER.includes(g)),
@@ -283,8 +413,9 @@ export function AdminPage() {
         <div>
           <h2 className="admin__title">Settings</h2>
           <p className="admin__lede">
-            These write the harness .env file. Secrets are shown only as a mask: type a new value to replace one, or
-            use Clear to remove it.
+            These write the harness .env file, then restart the server so every value is freshly loaded. Switches
+            take effect on click. Secrets are shown only as a mask: type a new value to replace one, or use Clear to
+            remove it.
           </p>
         </div>
         <div className="admin__headactions">
@@ -317,31 +448,40 @@ export function AdminPage() {
         </p>
       ) : null}
 
-      {settings.restartRequired.length > 0 && savedKeys === null ? (
+      {apply ? <ApplyBanner state={apply} onForce={() => void restartAndWait(apply.keys, true)} onDismiss={() => setApply(null)} /> : null}
+
+      {settings.restartRequired.length > 0 && !busyApplying ? (
         <p className="admin__warn" role="note">
-          Waiting for a restart to take effect: <span className="mono">{settings.restartRequired.join(", ")}</span>
+          Saved but not yet in effect: <span className="mono">{settings.restartRequired.join(", ")}</span>.{" "}
+          {health?.supervised ? (
+            <button type="button" className="btn btn--sm" onClick={() => void restartAndWait(settings.restartRequired, false)}>
+              Restart now
+            </button>
+          ) : (
+            "Restart the server by hand."
+          )}
         </p>
       ) : null}
+
+      {health && health.supervised !== true ? (
+        <p className="admin__warn" role="note">
+          This server was not started with <code className="mono">npm run dev</code> or{" "}
+          <code className="mono">npm start</code>, so it cannot restart itself. Changes are saved and applied live
+          where possible.
+        </p>
+      ) : null}
+
+      <Switches
+        defs={settings.defs.filter((d) => d.type === "boolean")}
+        valueOf={valueOf}
+        disabled={busyApplying || !settings.dotenvWritable}
+        onSwitch={onSwitch}
+      />
 
       {testAllDone && summary.total > 0 ? (
         <p className="admin__summary" role="status">
           {summary.total} checked, {summary.passed} passed, {summary.failed} failed, {summary.skipped} with no test.
         </p>
-      ) : null}
-
-      {savedKeys !== null ? (
-        <div className="admin__saved" role="status">
-          <strong className="admin__savedtitle">Saved</strong>
-          {savedKeys.length > 0 ? (
-            <p className="admin__savedtext">
-              These need a restart before they take effect: <span className="mono">{savedKeys.join(", ")}</span>. In
-              development, <code className="mono">npm run dev</code> restarts on a .env change. In production, restart
-              with <code className="mono">npm start</code>.
-            </p>
-          ) : (
-            <p className="admin__savedtext">The changes are in .env and are in effect now.</p>
-          )}
-        </div>
       ) : null}
 
       {loadError ? <ErrorNote message={loadError} onRetry={load} /> : null}
@@ -352,7 +492,7 @@ export function AdminPage() {
           {GROUP_LEDE[group] ? <p className="admin__grouplede">{GROUP_LEDE[group]}</p> : null}
           <div className="admin__cards">
             {settings.defs
-              .filter((def) => def.group === group)
+              .filter((def) => def.group === group && def.type !== "boolean")
               .map((def) => (
                 <SettingCard
                   key={def.key}
@@ -391,9 +531,9 @@ export function AdminPage() {
             type="button"
             className="btn btn--primary btn--sm"
             onClick={onSave}
-            disabled={!dirty || saving || !settings.dotenvWritable}
+            disabled={!dirty || saving || busyApplying || !settings.dotenvWritable}
           >
-            {saving ? <Spinner label="Saving" /> : "Save changes"}
+            {saving ? <Spinner label="Saving" /> : health?.supervised ? "Save & restart" : "Save changes"}
           </button>
         </div>
       </div>
@@ -555,6 +695,115 @@ function SettingCard({
             {relativeTime(result.checkedAt)}
           </span>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- switches
+function Switches({
+  defs,
+  valueOf,
+  disabled,
+  onSwitch,
+}: {
+  defs: SettingDef[];
+  valueOf: (key: string) => SettingValue | null;
+  disabled: boolean;
+  onSwitch: (key: string, on: boolean) => void;
+}) {
+  if (defs.length === 0) return null;
+  return (
+    <div className="admin__group">
+      <h3 className="admin__grouptitle">Switches</h3>
+      <p className="admin__grouplede">Each switch saves to .env and restarts the server as soon as you click it.</p>
+      <div className="switches">
+        {defs.map((def) => {
+          const value = valueOf(def.key);
+          const on = isTruthy(value?.effective ?? def.default);
+          const copy = SWITCH_COPY[def.key];
+          const alarming = copy?.danger !== undefined && (copy.danger === "on") === on;
+          return (
+            <div key={def.key} className={`switchrow${alarming ? " switchrow--alarm" : ""}`}>
+              <div className="switchrow__text">
+                <div className="switchrow__head">
+                  <span className="switchrow__label">{def.label}</span>
+                  <code className="mono switchrow__key">{def.key}</code>
+                  {value?.source === "env" ? (
+                    <Pill tone="warn" title={SOURCE_TITLE.env}>
+                      set in the shell environment
+                    </Pill>
+                  ) : null}
+                </div>
+                <p className="switchrow__desc">{copy ? (on ? copy.on : copy.off) : def.description}</p>
+              </div>
+              <div className="segmented" role="radiogroup" aria-label={def.label}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!on}
+                  className={`segmented__opt${!on ? " segmented__opt--on segmented__opt--off" : ""}`}
+                  disabled={disabled || !on}
+                  onClick={() => onSwitch(def.key, false)}
+                >
+                  Disabled
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  className={`segmented__opt${on ? ` segmented__opt--on${alarming ? " segmented__opt--alarm" : " segmented__opt--enabled"}` : ""}`}
+                  disabled={disabled || on}
+                  onClick={() => onSwitch(def.key, true)}
+                >
+                  Enabled
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- apply feedback
+const PHASE_STEPS: ApplyPhase[] = ["saving", "restarting", "waiting", "done"];
+const PHASE_LABEL: Record<ApplyPhase, string> = {
+  saving: "Saving",
+  restarting: "Restarting",
+  waiting: "Coming back up",
+  done: "Done",
+  blocked: "Restart postponed",
+  error: "Failed",
+};
+
+function ApplyBanner({ state, onForce, onDismiss }: { state: ApplyState; onForce: () => void; onDismiss: () => void }) {
+  const running = state.phase === "saving" || state.phase === "restarting" || state.phase === "waiting";
+  const at = PHASE_STEPS.indexOf(state.phase);
+  return (
+    <div className={`applybanner applybanner--${state.phase}`} role="status" aria-live="polite">
+      <div className="applybanner__head">
+        {running ? <Spinner /> : null}
+        <strong>{PHASE_LABEL[state.phase]}</strong>
+        <ol className="applybanner__steps" aria-hidden="true">
+          {PHASE_STEPS.map((p, i) => (
+            <li key={p} className={at >= i || state.phase === "done" ? "applybanner__step--on" : ""}>
+              {PHASE_LABEL[p]}
+            </li>
+          ))}
+        </ol>
+        {!running ? (
+          <button type="button" className="btn btn--ghost btn--sm" onClick={onDismiss}>
+            Dismiss
+          </button>
+        ) : null}
+      </div>
+      <p className="applybanner__msg">{state.message}</p>
+      {state.phase === "blocked" ? (
+        <button type="button" className="btn btn--sm" onClick={onForce}>
+          Restart anyway (stops the running work)
+        </button>
       ) : null}
     </div>
   );
